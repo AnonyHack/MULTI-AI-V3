@@ -20,7 +20,7 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID'))
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 PORT = int(os.environ.get("PORT", 10000))
-WEBHOOK_PATH = f"/{BOT_TOKEN}"
+WEBHOOK_PATH = f"/{TELEGRAM_BOT_TOKEN}"
 WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PATH}"
 
 # User sessions tracking
@@ -321,7 +321,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Bot is running on webhook!")
 
 async def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
 
