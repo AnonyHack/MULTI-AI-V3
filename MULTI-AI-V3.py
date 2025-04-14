@@ -13,6 +13,9 @@ import requests
 from pymongo import MongoClient
 from datetime import datetime
 
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
 # Load environment variables
 load_dotenv()
 
@@ -301,9 +304,10 @@ We'll respond within 24 hours!
 # Main Application
 # ======================
 async def main():
+    """Run the bot in webhook or polling mode"""
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-    
-    # Add ALL your handlers here (critical!)
+
+    # Register all handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("terms", terms))
@@ -312,36 +316,41 @@ async def main():
     app.add_handler(CommandHandler("contactus", contactus))
     app.add_handler(MessageHandler(filters.Regex("^(🧠|🤖|💬|🦙)"), select_model))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    # ... [add all other handlers] ...
 
     if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
-        print("🌐 Webhook mode activated")
+        print("🌐 Running in webhook mode...")
         
-        # 1. First delete any existing webhook
-        await app.bot.delete_webhook(drop_pending_updates=True)
+        # Initialize first
+        await app.initialize()
         
-        # 2. Set new webhook with explicit path
+        # Set webhook
         await app.bot.set_webhook(
-            url=f"https://multi-ai-v3.onrender.com/{TELEGRAM_BOT_TOKEN}",
-            secret_token='YourSecretToken123',  # Any random string
-            allowed_updates=["message", "callback_query"]
+            url=WEBHOOK_URL,
+            secret_token='YourSecretToken123',
+            drop_pending_updates=True
         )
         
-        # 3. Start webhook server with explicit path handling
-        await app.run_webhook(
+        # Start web server
+        await app.updater.start_webhook(
             listen="0.0.0.0",
             port=PORT,
-            webhook_url=f"https://multi-ai-v3.onrender.com/{TELEGRAM_BOT_TOKEN}",
+            webhook_url=WEBHOOK_URL,
             secret_token='YourSecretToken123'
         )
+        
+        # Keep application running
+        await app.start()
+        await asyncio.Event().wait()  # Run forever
+        
     else:
-        print("🔄 Polling mode activated")
+        print("🔄 Running in polling mode...")
         await app.run_polling()
 
 if __name__ == "__main__":
-    # Create new event loop for Render
+    # Create new event loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    
     try:
         loop.run_until_complete(main())
     except KeyboardInterrupt:
