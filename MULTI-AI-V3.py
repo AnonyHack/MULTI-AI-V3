@@ -301,10 +301,9 @@ We'll respond within 24 hours!
 # Main Application
 # ======================
 async def main():
-    """Run bot in webhook mode (Render) or polling mode (local)"""
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-
-    # Register all handlers
+    
+    # Add ALL your handlers here (critical!)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("terms", terms))
@@ -313,34 +312,30 @@ async def main():
     app.add_handler(CommandHandler("contactus", contactus))
     app.add_handler(MessageHandler(filters.Regex("^(🧠|🤖|💬|🦙)"), select_model))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # ... [add all other handlers] ...
 
-    # Webhook mode (for Render)
     if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
-        print("🌐 Running in webhook mode...")
-        await app.initialize()  # Explicit initialization
+        print("🌐 Webhook mode activated")
         
-        # Set webhook first
+        # 1. First delete any existing webhook
+        await app.bot.delete_webhook(drop_pending_updates=True)
+        
+        # 2. Set new webhook with explicit path
         await app.bot.set_webhook(
-            url=WEBHOOK_URL,
-            secret_token=TELEGRAM_BOT_TOKEN[-10:]  # Use last 10 chars of token as secret
+            url=f"https://multi-ai-v3.onrender.com/{TELEGRAM_BOT_TOKEN}",
+            secret_token='YourSecretToken123',  # Any random string
+            allowed_updates=["message", "callback_query"]
         )
         
-        # Then start webhook server
-        await app.updater.start_webhook(
+        # 3. Start webhook server with explicit path handling
+        await app.run_webhook(
             listen="0.0.0.0",
             port=PORT,
-            webhook_url=WEBHOOK_URL,
-            secret_token=TELEGRAM_BOT_TOKEN[-10:],
-            drop_pending_updates=True
+            webhook_url=f"https://multi-ai-v3.onrender.com/{TELEGRAM_BOT_TOKEN}",
+            secret_token='YourSecretToken123'
         )
-        
-        # Keep the application running
-        await app.start()
-        await asyncio.Event().wait()  # Run forever
-        
-    # Polling mode (for local development)
     else:
-        print("🔄 Running in polling mode...")
+        print("🔄 Polling mode activated")
         await app.run_polling()
 
 if __name__ == "__main__":
