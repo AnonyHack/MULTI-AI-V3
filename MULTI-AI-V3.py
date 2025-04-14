@@ -19,6 +19,9 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID'))
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+PORT = int(os.environ.get("PORT", 10000))
+WEBHOOK_PATH = f"/{BOT_TOKEN}"
+WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PATH}"
 
 # User sessions tracking
 user_sessions = {}
@@ -313,4 +316,27 @@ if __name__ == "__main__":
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("🤖 Multi-AI bot is running...")
-    app.run_polling()
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("✅ Bot is running on webhook!")
+
+async def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+
+    # Set webhook (delete old if needed)
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    await app.bot.set_webhook(WEBHOOK_URL)
+
+    print(f"🌐 Starting webhook at: {WEBHOOK_URL}")
+
+    # Bind to port so Render knows we're listening
+    await app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_path=WEBHOOK_PATH,
+    )
+
+if __name__ == "__main__":
+    asyncio.run(main())
