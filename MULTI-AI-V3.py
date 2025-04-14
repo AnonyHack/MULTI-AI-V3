@@ -300,12 +300,11 @@ We'll respond within 24 hours!
 # ======================
 # Main Application
 # ======================
-
 async def main():
-    """Run the bot either in webhook or polling mode based on environment"""
+    """Run bot in webhook mode (Render) or polling mode (local)"""
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Register all your handlers (same as before)
+    # Register all handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("terms", terms))
@@ -315,22 +314,19 @@ async def main():
     app.add_handler(MessageHandler(filters.Regex("^(🧠|🤖|💬|🦙)"), select_model))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Check if running on Render
-    if os.environ.get('RENDER'):
+    # Webhook mode (for Render)
+    if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
         print("🌐 Running in webhook mode...")
-        url = WEBHOOK_URL
-        
-        # Set webhook
         await app.bot.delete_webhook(drop_pending_updates=True)
-        await app.bot.set_webhook(url)
+        await app.bot.set_webhook(WEBHOOK_URL)
         
-        # Start webhook server
         await app.run_webhook(
             listen="0.0.0.0",
             port=PORT,
-            webhook_url=url,
-            secret_token=WEBHOOK_PATH.strip('/')
+            webhook_url=WEBHOOK_URL,
+            secret_token=TELEGRAM_BOT_TOKEN
         )
+    # Polling mode (for local development)
     else:
         print("🔄 Running in polling mode...")
         await app.run_polling()
