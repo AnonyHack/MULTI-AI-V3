@@ -317,29 +317,26 @@ async def main():
     app.add_handler(MessageHandler(filters.Regex("^(🧠|🤖|💬|🦙)"), select_model))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # ... [add all other handlers as before] ...
+
     if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
         print("🌐 Running in webhook mode...")
         
-        # Initialize first
+        # 1. Initialize first
         await app.initialize()
         
-        # Set webhook
-        await app.bot.set_webhook(
-            url=WEBHOOK_URL,
-            secret_token='YourSecretToken123',
-            drop_pending_updates=True
-        )
-        
-        # Start web server
+        # 2. Configure webhook properly
         await app.updater.start_webhook(
             listen="0.0.0.0",
             port=PORT,
             webhook_url=WEBHOOK_URL,
-            secret_token='YourSecretToken123'
+            secret_token='YourSecretToken123',
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES
         )
         
-        # Keep application running
-        await app.start()
+        # 3. Keep application running
+        print(f"✅ Webhook configured at {WEBHOOK_URL}")
         await asyncio.Event().wait()  # Run forever
         
     else:
@@ -347,6 +344,12 @@ async def main():
         await app.run_polling()
 
 if __name__ == "__main__":
+    # Configure logging
+    logging.basicConfig(
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level=logging.INFO
+    )
+    
     # Create new event loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -357,3 +360,4 @@ if __name__ == "__main__":
         pass
     finally:
         loop.close()
+        print("Bot stopped")
