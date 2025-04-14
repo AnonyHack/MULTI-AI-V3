@@ -317,19 +317,39 @@ async def main():
     # Webhook mode (for Render)
     if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
         print("🌐 Running in webhook mode...")
-        await app.bot.delete_webhook(drop_pending_updates=True)
-        await app.bot.set_webhook(WEBHOOK_URL)
+        await app.initialize()  # Explicit initialization
         
-        await app.run_webhook(
+        # Set webhook first
+        await app.bot.set_webhook(
+            url=WEBHOOK_URL,
+            secret_token=TELEGRAM_BOT_TOKEN[-10:]  # Use last 10 chars of token as secret
+        )
+        
+        # Then start webhook server
+        await app.updater.start_webhook(
             listen="0.0.0.0",
             port=PORT,
             webhook_url=WEBHOOK_URL,
-            secret_token=TELEGRAM_BOT_TOKEN
+            secret_token=TELEGRAM_BOT_TOKEN[-10:],
+            drop_pending_updates=True
         )
+        
+        # Keep the application running
+        await app.start()
+        await asyncio.Event().wait()  # Run forever
+        
     # Polling mode (for local development)
     else:
         print("🔄 Running in polling mode...")
         await app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Create new event loop for Render
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.close()
