@@ -301,43 +301,39 @@ We'll respond within 24 hours!
 # Main Application
 # ======================
 
-if __name__ == "__main__":
+async def main():
+    """Run the bot either in webhook or polling mode based on environment"""
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Command handlers
+    # Register all your handlers (same as before)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("terms", terms))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CommandHandler("contactus", contactus))
-    
-    # Message handlers
     app.add_handler(MessageHandler(filters.Regex("^(🧠|🤖|💬|🦙)"), select_model))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("🤖 Multi-AI bot is running...")
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Bot is running on webhook!")
-
-async def main():
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-
-    # Set webhook (delete old if needed)
-    await app.bot.delete_webhook(drop_pending_updates=True)
-    await app.bot.set_webhook(WEBHOOK_URL)
-
-    print(f"🌐 Starting webhook at: {WEBHOOK_URL}")
-
-    # Bind to port so Render knows we're listening
-    await app.run_webhook(
-    listen="0.0.0.0",
-    port=PORT,
-    path=WEBHOOK_PATH,
-)
+    # Check if running on Render
+    if os.environ.get('RENDER'):
+        print("🌐 Running in webhook mode...")
+        url = WEBHOOK_URL
+        
+        # Set webhook
+        await app.bot.delete_webhook(drop_pending_updates=True)
+        await app.bot.set_webhook(url)
+        
+        # Start webhook server
+        await app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            webhook_url=url,
+            secret_token=WEBHOOK_PATH.strip('/')
+        )
+    else:
+        print("🔄 Running in polling mode...")
+        await app.run_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
