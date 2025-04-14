@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: multi-ai-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python MULTI-AI-V3.py
