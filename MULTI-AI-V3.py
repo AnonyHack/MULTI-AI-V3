@@ -326,9 +326,10 @@ async def main():
         await app.initialize()
         
         # 2. Configure webhook properly
-        await app.updater.start_webhook(
+        await app.run_webhook(
             listen="0.0.0.0",
             port=PORT,
+            webhook_path=WEBHOOK_PATH,
             webhook_url=WEBHOOK_URL,
             secret_token='YourSecretToken123',
             drop_pending_updates=True,
