@@ -303,7 +303,7 @@ We'll respond within 24 hours!
 # ======================
 # Main Application
 # ======================
-async def main():
+def main():
     """Run the bot in webhook or polling mode"""
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -317,35 +317,33 @@ async def main():
     app.add_handler(MessageHandler(filters.Regex("^(🧠|🤖|💬|🦙)"), select_model))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # ... [add all other handlers as before] ...
-
     if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
         print("🌐 Running in webhook mode...")
         
-        # 1. Initialize first
-        await app.initialize()
+        # Create a new event loop for webhook mode
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         
-        # 2. Configure webhook properly
-        await app.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            webhook_url=WEBHOOK_URL,
-            secret_token='YourSecretToken123',
-            drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES
-        )
-        
-        # 3. Keep application running
-        print(f"✅ Webhook configured at {WEBHOOK_URL}")
-        await asyncio.Event().wait()  # Run forever
-        
+        try:
+            # Run the webhook
+            app.run_webhook(
+                listen="0.0.0.0",
+                port=PORT,
+                webhook_url=WEBHOOK_URL,
+                secret_token='YourSecretToken123',
+                drop_pending_updates=True,
+                allowed_updates=Update.ALL_TYPES
+            )
+        except KeyboardInterrupt:
+            print("Bot interrupted by user")
+        finally:
+            print("Bot stopped")
     else:
         print("🔄 Running in polling mode...")
-        await app.run_polling()
+        app.run_polling()
 
 if __name__ == "__main__":
     import logging
-    import asyncio
 
     # Configure logging
     logging.basicConfig(
@@ -353,9 +351,4 @@ if __name__ == "__main__":
         level=logging.INFO
     )
 
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("Bot interrupted by user")
-    finally:
-        print("Bot stopped")
+    main()
