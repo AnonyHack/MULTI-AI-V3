@@ -9,7 +9,8 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     ContextTypes,
-    filters
+    filters,
+    CallbackQueryHandler
 )
 import requests
 from pymongo import MongoClient
@@ -117,6 +118,8 @@ To use this bot, please join our official channels first:
 async def verify_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle join verification callback"""
     query = update.callback_query
+    await query.answer()  # This is important to stop the loading indicator
+    
     user_id = query.from_user.id
     
     if query.data == "check_join":
@@ -124,20 +127,20 @@ async def verify_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_member = await check_membership(update, user_id)
         
         if is_member:
-            await query.answer("✅ Verification successful! You can now use the bot.")
+            await query.answer("✅ Verification successful! You can now use the bot.", show_alert=True)
             
-            # Edit message to remove buttons (keeping the image)
-            await query.edit_message_caption(
-                caption="**Verification Complete!**\n\nYou can now use all bot features.",
-                reply_markup=None,
+            # Edit message to remove buttons
+            await query.edit_message_text(
+                text="**Verification Complete!**\n\nYou can now use all bot features.",
                 parse_mode="Markdown"
             )
             
             # Show model selection keyboard in a new message
             await context.bot.send_message(
                 chat_id=user_id,
-                text="Please select a model:",
-                reply_markup=markup
+                text="**Welcome to Multi-AI Bot!**\n\nChoose your preferred model:",
+                reply_markup=markup,
+                parse_mode="Markdown"
             )
             
             # Track user
@@ -145,8 +148,28 @@ async def verify_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 bot_stats["total_users"] += 1
                 await save_user(user_id, query.from_user.username)
         else:
-            await query.answer("❌ You haven't joined all channels yet!", show_alert=True)
-            await query.edit_message_reply_markup(reply_markup=get_join_keyboard())
+            await query.answer("❌ You haven't joined all channels yet! Please join all channels and try again.", show_alert=True)
+
+# ======================
+# Command Handler Wrapper (to block commands until verified)
+# ======================
+async def check_membership_wrapper(handler):
+    """Wrapper function to check membership before executing any command"""
+    async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.message.from_user.id
+        is_member = await check_membership(update, user_id)
+        
+        if not is_member:
+            await update.message.reply_text(
+                "⚠️ Please join our channels first to use this bot.",
+                reply_markup=get_join_keyboard()
+            )
+            return
+        
+        # If member, proceed with original handler
+        return await handler(update, context)
+    
+    return wrapped
 
 # ======================
 # Database Setup
@@ -518,16 +541,17 @@ async def main():
     global app
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Register all handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("terms", terms))
-    app.add_handler(CommandHandler("stats", stats))
+    # Register all handlers with membership check
+    app.add_handler(CommandHandler("start", check_membership_wrapper(start)))
+    app.add_handler(CommandHandler("help", check_membership_wrapper(help_command)))
+    app.add_handler(CommandHandler("terms", check_membership_wrapper(terms)))
+    app.add_handler(CommandHandler("stats", stats))  # Admin commands don't need check
     app.add_handler(CommandHandler("broadcast", broadcast))
-    app.add_handler(CommandHandler("contactus", contactus))
-    app.add_handler(MessageHandler(filters.Regex("^(🧠|🤖|💬|🦙)"), select_model))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    # ... [other handlers] ...
+    app.add_handler(CommandHandler("contactus", check_membership_wrapper(contactus)))
+    app.add_handler(MessageHandler(filters.Regex("^(🧠|🤖|💬|🦙)"), check_membership_wrapper(select_model)))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))  # handle_message has built-in check
+    app.add_handler(CallbackQueryHandler(verify_join))  # For join verification
+
 
     if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
         print("🌐 Running in webhook mode...")
