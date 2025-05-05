@@ -336,6 +336,15 @@ async def main():
         # Create a simple web server to keep the application running
         async with app:
             await app.start()
+            
+            # Create a simple HTTP server to bind to the port
+            from aiohttp import web
+            runner = web.AppRunner(web.Application())
+            await runner.setup()
+            site = web.TCPSite(runner, '0.0.0.0', PORT)
+            await site.start()
+            
+            print(f"🚀 Server running on port {PORT}")
             while True:
                 await asyncio.sleep(3600)  # Sleep for 1 hour
     else:
