@@ -303,8 +303,19 @@ We'll respond within 24 hours!
 # ======================
 # Main Application
 # ======================
+async def handle_webhook(request):
+    """Handle incoming Telegram updates"""
+    if request.headers.get('X-Telegram-Bot-Api-Secret-Token') != 'YourSecretToken123':
+        return web.Response(status=403)
+    
+    data = await request.json()
+    update = Update.de_json(data, app.bot)
+    await app.process_update(update)
+    return web.Response(status=200)
+
 async def main():
     """Run the bot in webhook or polling mode"""
+    global app
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
     # Register all handlers
@@ -316,14 +327,15 @@ async def main():
     app.add_handler(CommandHandler("contactus", contactus))
     app.add_handler(MessageHandler(filters.Regex("^(🧠|🤖|💬|🦙)"), select_model))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # ... [other handlers] ...
 
     if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
         print("🌐 Running in webhook mode...")
         
-        # Initialize the application first
+        # Initialize the application
         await app.initialize()
         
-        # Set up the webhook
+        # Set up webhook properly
         await app.bot.set_webhook(
             url=WEBHOOK_URL,
             secret_token='YourSecretToken123',
@@ -331,38 +343,36 @@ async def main():
             allowed_updates=Update.ALL_TYPES
         )
         
-        print(f"✅ Webhook configured at {WEBHOOK_URL}")
+        # Configure aiohttp server with webhook endpoint
+        server = web.Application()
+        server.router.add_post(WEBHOOK_PATH, handle_webhook)
         
-        # Create a simple web server to keep the application running
-        async with app:
-            await app.start()
-            
-            # Create a simple HTTP server to bind to the port
-            from aiohttp import web
-            runner = web.AppRunner(web.Application())
-            await runner.setup()
-            site = web.TCPSite(runner, '0.0.0.0', PORT)
-            await site.start()
-            
-            print(f"🚀 Server running on port {PORT}")
-            while True:
-                await asyncio.sleep(3600)  # Sleep for 1 hour
+        # Add health check endpoint
+        async def health_check(request):
+            return web.Response(text="OK")
+        
+        server.router.add_get('/', health_check)
+        
+        runner = web.AppRunner(server)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', PORT)
+        await site.start()
+        
+        print(f"🚀 Server running on port {PORT}")
+        print(f"✅ Webhook ready at {WEBHOOK_URL}")
+        
+        while True:
+            await asyncio.sleep(3600)
     else:
         print("🔄 Running in polling mode...")
         await app.run_polling()
 
 if __name__ == "__main__":
     import logging
-
-    # Configure logging
-    logging.basicConfig(
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        level=logging.INFO
-    )
-
+    logging.basicConfig(level=logging.INFO)
+    
     try:
         asyncio.run(main())
-    except KeyboardInterrupt:
-        print("Bot interrupted by user")
-    finally:
-        print("Bot stopped")
+    except Exception as e:
+        logging.error(f"Bot crashed: {e}")
+        raise
