@@ -41,8 +41,8 @@ bot_stats = {
 
 # Force join configuration
 REQUIRED_CHANNELS = {
-    "𝐌𝐀𝐈𝐍 𝐂𝐇𝐀𝐍𝐍𝐄𝐋": "https://t.me/Freenethubz",
-    "𝐂𝐇𝐀𝐍𝐍𝐄𝐋 𝐀𝐍𝐍𝐎𝐔𝐍𝐂𝐄𝐌𝐄𝐍𝐓": "https://t.me/megahubbots"
+    "𝐌𝐀𝐈𝐍 𝐂𝐇𝐀𝐍𝐍𝐄𝐋": "Freenethubz",
+    "𝐂𝐇𝐀𝐍𝐍𝐄𝐋 𝐀𝐍𝐍𝐎𝐔𝐍𝐂𝐄𝐌𝐄𝐍𝐓": "megahubbots"
 }
 
 # Welcome image URL
