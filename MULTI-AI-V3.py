@@ -119,12 +119,6 @@ async def verify_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ You haven't joined all channels yet! Please join all channels and try again.",
             show_alert=True
         )
-        # Show join buttons again
-        await context.bot.send_message(
-            chat_id=query.from_user.id,
-            text="Please join all required channels first:",
-            reply_markup=get_join_keyboard()
-        )
 
 def channel_required(func):
     """Decorator to enforce channel membership before executing any command"""
