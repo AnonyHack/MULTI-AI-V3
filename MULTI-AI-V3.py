@@ -290,19 +290,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ======================
 # Contact us
 # ======================
-
 async def contactus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Contact information command"""
     keyboard = [[InlineKeyboardButton("Contact Developer", url="t.me/AM_ITACHIUCHIHA")]]
+    keyboard = [[InlineKeyboardButton("Email Us", url="Freenethubbusiness@gmail.com")]]
+    keyboard = [[InlineKeyboardButton("Bot Updates", url="t.me/Megahubbots")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     contact_text = """
 📞 *Contact Us*
 
-For support or inquiries:
-- Email: Freenethubbusiness@gmail.com
-- Telegram: @   Megahubbots
-- Admin Contact: @AM_ITACHIUCHIHA
+For support or inquiries, feel free to reach out to us through the provided buttons.
+We value your feedback and are here to assist you with any questions or issues you may have.
 
 We'll respond within 24 hours!
 """
