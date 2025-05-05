@@ -303,7 +303,7 @@ We'll respond within 24 hours!
 # ======================
 # Main Application
 # ======================
-def main():
+async def main():
     """Run the bot in webhook or polling mode"""
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -320,27 +320,27 @@ def main():
     if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
         print("🌐 Running in webhook mode...")
         
-        # Create a new event loop for webhook mode
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Initialize the application first
+        await app.initialize()
         
-        try:
-            # Run the webhook
-            app.run_webhook(
-                listen="0.0.0.0",
-                port=PORT,
-                webhook_url=WEBHOOK_URL,
-                secret_token='YourSecretToken123',
-                drop_pending_updates=True,
-                allowed_updates=Update.ALL_TYPES
-            )
-        except KeyboardInterrupt:
-            print("Bot interrupted by user")
-        finally:
-            print("Bot stopped")
+        # Set up the webhook
+        await app.bot.set_webhook(
+            url=WEBHOOK_URL,
+            secret_token='YourSecretToken123',
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES
+        )
+        
+        print(f"✅ Webhook configured at {WEBHOOK_URL}")
+        
+        # Create a simple web server to keep the application running
+        async with app:
+            await app.start()
+            while True:
+                await asyncio.sleep(3600)  # Sleep for 1 hour
     else:
         print("🔄 Running in polling mode...")
-        app.run_polling()
+        await app.run_polling()
 
 if __name__ == "__main__":
     import logging
@@ -351,4 +351,9 @@ if __name__ == "__main__":
         level=logging.INFO
     )
 
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot interrupted by user")
+    finally:
+        print("Bot stopped")
