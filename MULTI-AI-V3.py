@@ -38,6 +38,117 @@ bot_stats = {
 }
 
 # ======================
+# Configuration (add near top with other configs)
+# ======================
+REQUIRED_CHANNELS = {
+    "BOT UPDATES": "https://t.me/Megahubbots",  # Channel username and invite link
+    "PROMOTER CHANNEL": "https://t.me/Freenethubchannel"
+}
+
+# ======================
+# Helper Functions
+# ======================
+async def check_membership(update: Update, user_id: int) -> bool:
+    """Check if user is member of all required channels"""
+    try:
+        for channel in REQUIRED_CHANNELS.keys():
+            chat_member = await update.get_bot().get_chat_member(
+                chat_id=channel,
+                user_id=user_id
+            )
+            if chat_member.status not in ['member', 'administrator', 'creator']:
+                return False
+        return True
+    except Exception as e:
+        logging.error(f"Error checking membership: {e}")
+        return False
+
+def get_join_keyboard():
+    """Generate inline keyboard with join buttons"""
+    keyboard = []
+    for channel, link in REQUIRED_CHANNELS.items():
+        keyboard.append([InlineKeyboardButton(f"Join {channel}", url=link)])
+    keyboard.append([InlineKeyboardButton("✅ I've Joined", callback_data="check_join")])
+    return InlineKeyboardMarkup(keyboard)
+
+# ======================
+# Modified Start Command
+# ======================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Modified start command with membership check"""
+    user_id = update.message.from_user.id
+    username = update.message.from_user.username
+    
+    # Check if user is member of required channels
+    is_member = await check_membership(update, user_id)
+    
+    if not is_member:
+        welcome_text = """
+👋 *Welcome!* 
+
+To use this bot, please join our official channels first:
+"""
+        for channel in REQUIRED_CHANNELS.keys():
+            welcome_text += f"\n- {channel}"
+            
+        welcome_text += "\n\nAfter joining, click the button below to verify."
+        
+        await update.message.reply_text(
+            welcome_text,
+            reply_markup=get_join_keyboard(),
+            parse_mode="Markdown"
+        )
+        return
+    
+    # Existing start functionality
+    if user_id not in user_sessions:
+        bot_stats["total_users"] += 1
+        await save_user(user_id, username)  # Save new user to DB
+    
+    await update.message.reply_text(
+        "**Welcome to Multi-AI Bot!**\n\nChoose your preferred model:",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+# ======================
+# Callback Handler for Join Verification
+# ======================
+async def verify_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle join verification callback"""
+    query = update.callback_query
+    user_id = query.from_user.id
+    
+    if query.data == "check_join":
+        # Check membership again
+        is_member = await check_membership(update, user_id)
+        
+        if is_member:
+            await query.answer("✅ Verification successful! You can now use the bot.")
+            
+            # Edit message to remove buttons (keeping the image)
+            await query.edit_message_caption(
+                caption="**Verification Complete!**\n\nYou can now use all bot features.",
+                reply_markup=None,
+                parse_mode="Markdown"
+            )
+            
+            # Show model selection keyboard in a new message
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="Please select a model:",
+                reply_markup=markup
+            )
+            
+            # Track user
+            if user_id not in user_sessions:
+                bot_stats["total_users"] += 1
+                await save_user(user_id, query.from_user.username)
+        else:
+            await query.answer("❌ You haven't joined all channels yet!", show_alert=True)
+            await query.edit_message_reply_markup(reply_markup=get_join_keyboard())
+
+# ======================
 # Database Setup
 # ======================
 
@@ -136,18 +247,48 @@ By using this bot, you agree to these terms.
 # ======================
 # Command Handlers
 # ======================
+# Add this line for the welcome image (you'll replace this URL with your actual image URL)
+WELCOME_IMAGE_URL = "https://envs.sh/keh.jpg"  # <-- REPLACE THIS WITH YOUR IMAGE URL
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Modified start command with user tracking"""
+    """Modified start command with membership check and welcome image"""
     user_id = update.message.from_user.id
     username = update.message.from_user.username
     
+    # Check if user is member of required channels
+    is_member = await check_membership(update, user_id)
+    
+    if not is_member:
+        welcome_text = """
+👋 *Welcome to Our AI Bot!* 
+
+📌 To access all features, please join our official channels first:
+"""
+        for channel in REQUIRED_CHANNELS.keys():
+            welcome_text += f"\n- {channel}"
+            
+        welcome_text += "\n\nAfter joining, click the button below to verify."
+        
+        # Send image with caption
+        await context.bot.send_photo(
+            chat_id=user_id,
+            photo=WELCOME_IMAGE_URL,  # <-- This is where your image URL will be used
+            caption=welcome_text,
+            reply_markup=get_join_keyboard(),
+            parse_mode="Markdown"
+        )
+        return
+    
+    # Existing start functionality for verified users
     if user_id not in user_sessions:
         bot_stats["total_users"] += 1
         await save_user(user_id, username)  # Save new user to DB
     
-    await update.message.reply_text(
-        "**Welcome to Multi-AI Bot!**\n\nChoose your preferred model:",
+    # Send welcome message with image for verified users
+    await context.bot.send_photo(
+        chat_id=user_id,
+        photo=WELCOME_IMAGE_URL,  # <-- Same image or you can use a different one
+        caption="**Welcome to Multi-AI Bot!**\n\nChoose your preferred model:",
         reply_markup=markup,
         parse_mode="Markdown"
     )
@@ -241,6 +382,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.message.from_user.username
     user_text = update.message.text
 
+        # Check membership first
+    is_member = await check_membership(update, user_id)
+    if not is_member:
+        await update.message.reply_text(
+            "⚠️ Please join our channels first to use this bot.",
+            reply_markup=get_join_keyboard()
+        )
+        return
+
     if user_id not in user_sessions:
         await update.message.reply_text("❗ Please select a model first using /start.")
         return
@@ -290,15 +440,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ======================
 # Contact us
 # ======================
+
 async def contactus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Contact information command"""
-    keyboard = [[InlineKeyboardButton("Contact Developer", url="t.me/AM_ITACHIUCHIHA")]]
-    keyboard = [[InlineKeyboardButton("Email Us", url="Freenethubbusiness@gmail.com")]]
-    keyboard = [[InlineKeyboardButton("Bot Updates", url="t.me/Megahubbots")]]
+    keyboard = [
+        [InlineKeyboardButton("Contact Developer", url="https://t.me/AM_ITACHIUCHIHA")],
+        [InlineKeyboardButton("Email Us", url="mailto:Freenethubbusiness@gmail.com")],
+        [InlineKeyboardButton("Bot Updates", url="https://t.me/Megahubbots")]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     contact_text = """
-📞 *Contact Us*
+📞 𝐂𝐨𝐧𝐭𝐚𝐜𝐭 𝐔𝐬
 
 For support or inquiries, feel free to reach out to us through the provided buttons.
 We value your feedback and are here to assist you with any questions or issues you may have.
@@ -306,6 +459,7 @@ We value your feedback and are here to assist you with any questions or issues y
 We'll respond within 24 hours!
 """
     await update.message.reply_text(contact_text, reply_markup=reply_markup)
+
 
 
 # ======================
