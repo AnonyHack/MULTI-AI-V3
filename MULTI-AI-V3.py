@@ -159,20 +159,19 @@ async def save_user(user_id: int, username: str = None):
     
     users.update_one(
         {"user_id": user_id},
-        {"$set": {
-            "user_id": user_id,
-            "username": username,
-            "last_active": datetime.now(),
-            "models_used": []
-        }},
+        {
+            "$setOnInsert": {  # Only set these fields if the user is new
+                "models_used": []
+            },
+            "$set": {
+                "user_id": user_id,
+                "username": username,
+                "last_active": datetime.now()
+            },
+            "$inc": {"message_count": 1}  # Increment message count
+        },
         upsert=True
     )
-    
-    users.update_one(
-        {"user_id": user_id},
-        {"$inc": {"message_count": 1}}
-    )
-
 async def update_model_usage(user_id: int, model_name: str):
     """Update which models a user has used"""
     try:
@@ -180,12 +179,13 @@ async def update_model_usage(user_id: int, model_name: str):
         db.users.update_one(
             {"user_id": user_id},
             {
-                "$addToSet": {"models_used": model_name},
-                "$set": {"last_active": datetime.now()}
+                "$addToSet": {"models_used": model_name},  # Add model if not already in the list
+                "$set": {"last_active": datetime.now()}  # Update last active timestamp
             }
         )
     except Exception as e:
-        logging.error(f"Error updating model usage: {e}")
+        logging.error(f"Error updating model usage for user {user_id}: {e}")
+        raise  # Optionally re-raise the exception for higher-level handling
 
 # Model configuration
 MODELS = {
@@ -278,14 +278,19 @@ async def terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @channel_required
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command: show usage statistics"""
-    if update.message.from_user.id != ADMIN_USER_ID:
+    if not is_admin(update.message.from_user.id):
         await update.message.reply_text("❌ Admin access required.")
         return
 
     try:
-        # Fetch total users from MongoDB
+        # Connect to the database
         db = get_database()
+
+        # Fetch total users from MongoDB
         total_users = db.users.count_documents({})  # Count all users in the collection
+
+        # Fetch active sessions (still in memory)
+        active_sessions = len(user_sessions)
 
         # Fetch model usage statistics from MongoDB
         model_usage = {}
@@ -299,12 +304,13 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📊 *Bot Statistics*
 
 • Total users: {total_users}
-• Active sessions: {len(user_sessions)}  # Still in-memory
+• Active sessions: {active_sessions}
 • Model usage:
 """
         for model, count in model_usage.items():
             stats_text += f"  - {model}: {count}\n"
 
+        # Send the stats to the admin
         await update.message.reply_text(stats_text, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Error fetching stats: {e}")
