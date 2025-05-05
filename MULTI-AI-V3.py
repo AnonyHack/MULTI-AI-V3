@@ -116,7 +116,7 @@ async def verify_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await query.answer(
-            "❌ You haven't joined all channels yet! Please join all channels and try again.",
+            "❌ 𝙔𝙤𝙪 𝙝𝙖𝙫𝙚𝙣'𝙩 𝙟𝙤𝙞𝙣𝙚𝙙 𝙖𝙡𝙡 𝙘𝙝𝙖𝙣𝙣𝙚𝙡𝙨 𝙮𝙚𝙩!.",
             show_alert=True
         )
 
