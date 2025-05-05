@@ -41,8 +41,13 @@ bot_stats = {
 # ======================
 
 def get_database():
-    """Initialize MongoDB connection"""
-    client = MongoClient(os.getenv('MONGODB_URI'))
+    """Initialize MongoDB connection with pooling"""
+    client = MongoClient(
+        os.getenv('MONGODB_URI'),
+        maxPoolSize=50,
+        connectTimeoutMS=30000,
+        socketTimeoutMS=30000
+    )
     return client[os.getenv('MONGODB_DBNAME')]
 
 async def save_user(user_id: int, username: str = None):
@@ -50,27 +55,37 @@ async def save_user(user_id: int, username: str = None):
     db = get_database()
     users = db.users
     
-    user_data = {
-        "user_id": user_id,
-        "username": username,
-        "last_active": datetime.now(),
-        "models_used": [],
-        "message_count": 0
-    }
-    
+    # First update the user data (excluding message_count)
     users.update_one(
         {"user_id": user_id},
-        {"$set": user_data, "$inc": {"message_count": 1}},
+        {"$set": {
+            "user_id": user_id,
+            "username": username,
+            "last_active": datetime.now(),
+            "models_used": []  # Initialize if not exists
+        }},
         upsert=True
+    )
+    
+    # Then increment message_count separately
+    users.update_one(
+        {"user_id": user_id},
+        {"$inc": {"message_count": 1}}
     )
 
 async def update_model_usage(user_id: int, model_name: str):
     """Update which models a user has used"""
-    db = get_database()
-    db.users.update_one(
-        {"user_id": user_id},
-        {"$addToSet": {"models_used": model_name}}
-    )
+    try:
+        db = get_database()
+        db.users.update_one(
+            {"user_id": user_id},
+            {
+                "$addToSet": {"models_used": model_name},
+                "$set": {"last_active": datetime.now()}
+            }
+        )
+    except Exception as e:
+        logging.error(f"Error updating model usage: {e}")
 
 
 # Model configuration
@@ -300,6 +315,43 @@ We'll respond within 24 hours!
         "message": "Used /contactus command"
     })
 
+# ======================
+# Error Handling
+# ======================
+async def handle_webhook(request):
+    """Handle incoming Telegram updates"""
+    try:
+        if request.headers.get('X-Telegram-Bot-Api-Secret-Token') != 'YourSecretToken123':
+            return web.Response(status=403)
+        
+        data = await request.json()
+        update = Update.de_json(data, app.bot)
+        await app.process_update(update)
+        return web.Response(status=200)
+    except Exception as e:
+        logging.error(f"Error processing update: {e}")
+        return web.Response(status=500)
+    
+# ======================
+# indexes to improve performance
+# ======================
+def initialize_db():
+    db = get_database()
+    db.users.create_index("user_id", unique=True)
+    db.users.create_index("last_active")
+
+# ======================
+# Health Check Endpoint
+# ======================
+async def health_check(request):
+    try:
+        db = get_database()
+        # Simple ping to check DB connection
+        db.command('ping')
+        return web.Response(text="OK")
+    except Exception as e:
+        logging.error(f"Health check failed: {e}")
+        return web.Response(status=503, text="Service Unavailable")
 
 # ======================
 # Main Application
