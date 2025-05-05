@@ -39,10 +39,10 @@ bot_stats = {
     "model_usage": {}
 }
 
-# Force join configuration
+# Force join configuration - Format: {"Channel Display Name": "@channel_username"}
 REQUIRED_CHANNELS = {
-    "𝐌𝐀𝐈𝐍 𝐂𝐇𝐀𝐍𝐍𝐄𝐋": "Freenethubz",
-    "𝐂𝐇𝐀𝐍𝐍𝐄𝐋 𝐀𝐍𝐍𝐎𝐔𝐍𝐂𝐄𝐌𝐄𝐍𝐓": "megahubbots"
+    "MAIN CHANNEL": "@Freenethubz",  # Use @username format
+    "ANNOUNCEMENT CHANNEL": "@megahubbots"  # Use @username format
 }
 
 # Welcome image URL
@@ -57,15 +57,17 @@ def is_admin(user_id: int) -> bool:
 
 async def is_user_member(user_id, bot):
     """Check if user is member of all required channels"""
-    for channel in REQUIRED_CHANNELS:
+    for channel_name, channel_username in REQUIRED_CHANNELS.items():
         try:
-            # Extract the channel username from the URL
-            channel_username = channel.split('/')[-1]
-            chat_member = await bot.get_chat_member(chat_id=f"@{channel_username}", user_id=user_id)
+            chat_member = await bot.get_chat_member(
+                chat_id=channel_username,  # Use the @username directly
+                user_id=user_id
+            )
             if chat_member.status not in ["member", "administrator", "creator"]:
+                logger.info(f"User {user_id} not member of {channel_name}")
                 return False
         except Exception as e:
-            logger.error(f"Error checking channel membership: {e}")
+            logger.error(f"Error checking channel membership for {channel_name}: {e}")
             return False
     return True
 
@@ -78,7 +80,9 @@ async def check_membership(update: Update, user_id: int) -> bool:
 def get_join_keyboard():
     """Create keyboard with join buttons"""
     buttons = []
-    for channel_name, channel_url in REQUIRED_CHANNELS.items():
+    for channel_name, channel_username in REQUIRED_CHANNELS.items():
+        # Convert @username to t.me/username for the URL
+        channel_url = f"https://t.me/{channel_username[1:]}"
         buttons.append([InlineKeyboardButton(channel_name, url=channel_url)])
     buttons.append([InlineKeyboardButton("✅ Verify Membership", callback_data="verify_membership")])
     return InlineKeyboardMarkup(buttons)
@@ -87,7 +91,8 @@ async def ask_user_to_join(update: Update):
     """Show join buttons to user"""
     await update.message.reply_text(
         "🚨 To use this bot, you must join our channels first! 🚨\n\n"
-        "Click the buttons below to join, then press '✅ Verify Membership' to verify.",
+        "1. Click the buttons below to join our channels\n"
+        "2. Then click '✅ Verify Membership' to confirm",
         reply_markup=get_join_keyboard(),
         parse_mode="Markdown"
     )
@@ -98,8 +103,11 @@ async def verify_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     if await is_user_member(query.from_user.id, context.bot):
-        await query.message.edit_text("✅ Verification successful! You can now use all bot commands.")
-        # Show the model selection after verification
+        await query.message.edit_text(
+            "✅ Verification successful! You can now use all bot features.",
+            parse_mode="Markdown"
+        )
+        # Show model selection after verification
         await context.bot.send_message(
             chat_id=query.from_user.id,
             text="**Welcome to Multi-AI Bot!**\n\nChoose your preferred model:",
@@ -107,7 +115,16 @@ async def verify_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
     else:
-        await query.answer("❌ You haven't joined all channels yet!", show_alert=True)
+        await query.answer(
+            "❌ You haven't joined all channels yet! Please join all channels and try again.",
+            show_alert=True
+        )
+        # Show join buttons again
+        await context.bot.send_message(
+            chat_id=query.from_user.id,
+            text="Please join all required channels first:",
+            reply_markup=get_join_keyboard()
+        )
 
 def channel_required(func):
     """Decorator to enforce channel membership before executing any command"""
