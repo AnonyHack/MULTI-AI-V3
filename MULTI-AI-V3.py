@@ -100,14 +100,13 @@ async def ask_user_to_join(update: Update):
 async def verify_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle membership verification callback"""
     query = update.callback_query
-    await query.answer()
-    
+
     if await is_user_member(query.from_user.id, context.bot):
+        await query.answer()  # Single use here
         await query.message.edit_text(
             "✅ Verification successful! You can now use all bot features.",
             parse_mode="Markdown"
         )
-        # Show model selection after verification
         await context.bot.send_message(
             chat_id=query.from_user.id,
             text="**Welcome to Multi-AI Bot!**\n\nChoose your preferred model:",
@@ -116,9 +115,10 @@ async def verify_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await query.answer(
-            "❌ 𝙔𝙤𝙪 𝙝𝙖𝙫𝙚𝙣'𝙩 𝙟𝙤𝙞𝙣𝙚𝙙 𝙖𝙡𝙡 𝙘𝙝𝙖𝙣𝙣𝙚𝙡𝙨 𝙮𝙚𝙩!.",
+            text="❌ 𝙔𝙤𝙪 𝙝𝙖𝙫𝙚𝙣'𝙩 𝙟𝙤𝙞𝙣𝙚𝙙 𝙖𝙡𝙡 𝙘𝙝𝙖𝙣𝙣𝙚𝙡𝙨 𝙮𝙚𝙩!",
             show_alert=True
         )
+
 
 def channel_required(func):
     """Decorator to enforce channel membership before executing any command"""
