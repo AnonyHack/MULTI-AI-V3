@@ -344,20 +344,18 @@ async def main():
         await app.run_polling()
 
 if __name__ == "__main__":
+    import logging
+    import asyncio
+
     # Configure logging
     logging.basicConfig(
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         level=logging.INFO
     )
-    
-    # Create new event loop
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
+
     try:
-        loop.run_until_complete(main())
+        asyncio.run(main())
     except KeyboardInterrupt:
-        pass
+        print("Bot interrupted by user")
     finally:
-        loop.close()
         print("Bot stopped")
