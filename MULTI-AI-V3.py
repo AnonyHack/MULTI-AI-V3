@@ -1,8 +1,9 @@
+from asyncio.log import logger
 import os
 import asyncio
 from dotenv import load_dotenv
 from aiohttp import web
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import InlineKeyboardButton, Update, ReplyKeyboardMarkup, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -292,28 +293,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def contactus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Contact information command"""
+    keyboard = [[InlineKeyboardButton("Contact Developer", url="t.me/AM_ITACHIUCHIHA")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     contact_text = """
 📞 *Contact Us*
 
 For support or inquiries:
 - Email: Freenethubbusiness@gmail.com
-- Telegram: @Freenethubz
-- Admin Contact: @SILANDO @AM_ITACHIUCHIHA
+- Telegram: @   Megahubbots
+- Admin Contact: @AM_ITACHIUCHIHA
 
 We'll respond within 24 hours!
 """
-    await update.message.reply_text(contact_text, parse_mode="Markdown")
-    
-    # Save the contact request
-    user_id = update.message.from_user.id
-    username = update.message.from_user.username
-    db = get_database()
-    db.contact_requests.insert_one({
-        "user_id": user_id,
-        "username": username,
-        "timestamp": datetime.now(),
-        "message": "Used /contactus command"
-    })
+    await update.message.reply_text(contact_text, reply_markup=reply_markup)
+
 
 # ======================
 # Error Handling
