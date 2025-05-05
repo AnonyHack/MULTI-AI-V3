@@ -278,21 +278,37 @@ async def terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @channel_required
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command: show usage statistics"""
-    if not is_admin(update.message.from_user.id):
+    if update.message.from_user.id != ADMIN_USER_ID:
         await update.message.reply_text("❌ Admin access required.")
         return
-    
-    stats_text = f"""
+
+    try:
+        # Fetch total users from MongoDB
+        db = get_database()
+        total_users = db.users.count_documents({})  # Count all users in the collection
+
+        # Fetch model usage statistics from MongoDB
+        model_usage = {}
+        users = db.users.find({}, {"models_used": 1})  # Fetch only the models_used field
+        for user in users:
+            for model in user.get("models_used", []):
+                model_usage[model] = model_usage.get(model, 0) + 1
+
+        # Prepare stats text
+        stats_text = f"""
 📊 *Bot Statistics*
 
-• Total users: {bot_stats["total_users"]}
-• Active sessions: {len(user_sessions)}
+• Total users: {total_users}
+• Active sessions: {len(user_sessions)}  # Still in-memory
 • Model usage:
 """
-    for model, count in bot_stats["model_usage"].items():
-        stats_text += f"  - {model}: {count}\n"
-    
-    await update.message.reply_text(stats_text, parse_mode="Markdown")
+        for model, count in model_usage.items():
+            stats_text += f"  - {model}: {count}\n"
+
+        await update.message.reply_text(stats_text, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Error fetching stats: {e}")
+        await update.message.reply_text("❌ Failed to fetch statistics.")
 
 @channel_required
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
