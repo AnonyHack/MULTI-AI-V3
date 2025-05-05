@@ -59,7 +59,9 @@ async def is_user_member(user_id, bot):
     """Check if user is member of all required channels"""
     for channel in REQUIRED_CHANNELS:
         try:
-            chat_member = await bot.get_chat_member(chat_id=f"@{channel.split()[-1]}", user_id=user_id)
+            # Extract the channel username from the URL
+            channel_username = channel.split('/')[-1]
+            chat_member = await bot.get_chat_member(chat_id=f"@{channel_username}", user_id=user_id)
             if chat_member.status not in ["member", "administrator", "creator"]:
                 return False
         except Exception as e:
@@ -78,7 +80,7 @@ def get_join_keyboard():
     buttons = []
     for channel_name, channel_url in REQUIRED_CHANNELS.items():
         buttons.append([InlineKeyboardButton(channel_name, url=channel_url)])
-    buttons.append([InlineKeyboardButton("✅ Verify Membership", callback_data="check_join")])
+    buttons.append([InlineKeyboardButton("✅ Verify Membership", callback_data="verify_membership")])
     return InlineKeyboardMarkup(buttons)
 
 async def ask_user_to_join(update: Update):
@@ -97,6 +99,13 @@ async def verify_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if await is_user_member(query.from_user.id, context.bot):
         await query.message.edit_text("✅ Verification successful! You can now use all bot commands.")
+        # Show the model selection after verification
+        await context.bot.send_message(
+            chat_id=query.from_user.id,
+            text="**Welcome to Multi-AI Bot!**\n\nChoose your preferred model:",
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
     else:
         await query.answer("❌ You haven't joined all channels yet!", show_alert=True)
 
@@ -214,28 +223,11 @@ By using this bot, you agree to these terms.
 # ======================
 # Command Handlers
 # ======================
+@channel_required
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command with membership check and welcome image"""
     user_id = update.message.from_user.id
     username = update.message.from_user.username
-    
-    # Check if user is member of required channels
-    is_member = await check_membership(update, user_id)
-    
-    if not is_member:
-        welcome_text = "👋 *Welcome to Our AI Bot!*\n\n📌 To access all features, please join our official channels first:"
-        for channel_name in REQUIRED_CHANNELS:
-            welcome_text += f"\n- {channel_name}"
-        welcome_text += "\n\nAfter joining, click the button below to verify."
-        
-        await context.bot.send_photo(
-            chat_id=user_id,
-            photo=WELCOME_IMAGE_URL,
-            caption=welcome_text,
-            reply_markup=get_join_keyboard(),
-            parse_mode="Markdown"
-        )
-        return
     
     # Existing start functionality for verified users
     if user_id not in user_sessions:
@@ -250,6 +242,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+@channel_required
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show help information"""
     help_text = """
@@ -266,10 +259,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
+@channel_required
 async def terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show terms and conditions"""
     await update.message.reply_text(TERMS_TEXT, parse_mode="Markdown")
 
+@channel_required
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command: show usage statistics"""
     if not is_admin(update.message.from_user.id):
@@ -288,6 +283,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(stats_text, parse_mode="Markdown")
 
+@channel_required
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command: broadcast message to all users"""
     if not is_admin(update.message.from_user.id):
@@ -311,11 +307,12 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(f"✅ Broadcast sent to {len(user_sessions)} users.")
 
+@channel_required
 async def contactus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Contact information command"""
     keyboard = [
         [InlineKeyboardButton("Contact Developer", url="https://t.me/AM_ITACHIUCHIHA")],
-        [InlineKeyboardButton("Email Us", url="mailto:Freenethubbusiness@gmail.com")],
+        [InlineKeyboardButton("Email Us", url="Freenethubbusiness@gmail.com")],
         [InlineKeyboardButton("Bot Updates", url="https://t.me/Megahubbots")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -333,6 +330,7 @@ We'll respond within 24 hours!
 # ======================
 # Message Handlers
 # ======================
+@channel_required
 async def select_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle model selection"""
     model_choice = update.message.text
@@ -349,20 +347,12 @@ async def select_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
+@channel_required
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle user messages with AI response"""
     user_id = update.message.from_user.id
     username = update.message.from_user.username
     user_text = update.message.text
-
-    # Check membership first
-    is_member = await check_membership(update, user_id)
-    if not is_member:
-        await update.message.reply_text(
-            "⚠️ Please join our channels first to use this bot.",
-            reply_markup=get_join_keyboard()
-        )
-        return
 
     if user_id not in user_sessions:
         await update.message.reply_text("❗ Please select a model first using /start.")
@@ -405,7 +395,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Failed to connect: {str(e)}")
 
 # ======================
-# Main Application
+# Webhook Handling
 # ======================
 async def handle_webhook(request):
     """Handle incoming Telegram updates"""
@@ -419,20 +409,17 @@ async def handle_webhook(request):
 
 async def health_check(request):
     """Health check endpoint"""
-    try:
-        db = get_database()
-        db.command('ping')
-        return web.Response(text="OK")
-    except Exception as e:
-        logging.error(f"Health check failed: {e}")
-        return web.Response(status=503, text="Service Unavailable")
+    return web.Response(text="OK")
 
+# ======================
+# Main Application
+# ======================
 async def main():
     """Run the bot in webhook or polling mode"""
     global app
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Register handlers
+    # Register all handlers with channel requirement
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("terms", terms))
@@ -441,11 +428,15 @@ async def main():
     app.add_handler(CommandHandler("contactus", contactus))
     app.add_handler(MessageHandler(filters.Regex("^(🧠|🤖|💬|🦙)"), select_model))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CallbackQueryHandler(verify_membership))
+    app.add_handler(CallbackQueryHandler(verify_membership, pattern="^verify_membership$"))
 
     if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
         print("🌐 Running in webhook mode...")
+        
+        # Initialize the application
         await app.initialize()
+        
+        # Set up webhook properly
         await app.bot.set_webhook(
             url=WEBHOOK_URL,
             secret_token='YourSecretToken123',
@@ -453,6 +444,7 @@ async def main():
             allowed_updates=Update.ALL_TYPES
         )
         
+        # Configure aiohttp server with webhook endpoint
         server = web.Application()
         server.router.add_post(WEBHOOK_PATH, handle_webhook)
         server.router.add_get('/', health_check)
