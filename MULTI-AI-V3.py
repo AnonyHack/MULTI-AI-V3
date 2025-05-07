@@ -345,7 +345,6 @@ async def contactus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Contact information command"""
     keyboard = [
         [InlineKeyboardButton("Contact Developer", url="https://t.me/AM_ITACHIUCHIHA")],
-        [InlineKeyboardButton("Email Us", url="Freenethubbusiness@gmail.com")],
         [InlineKeyboardButton("Bot Updates", url="https://t.me/Megahubbots")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
