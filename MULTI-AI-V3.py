@@ -58,7 +58,7 @@ MODELS = {
     },
     "LLaMA V3": {
         "api_type": "openrouter",
-        "model_name": "meta-llama/llama-4-scout:free",
+        "model_name": "meta-llama/llama-4-maverick:free",
         "api_key": os.getenv('LLAMA_KEY'),
         "display_name": "🦙 LLaMA V3"
     },
