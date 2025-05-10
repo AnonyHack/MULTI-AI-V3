@@ -14,7 +14,7 @@ from telegram.ext import (
 )
 import requests
 from pymongo import MongoClient
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import wraps
 import logging
 
@@ -33,8 +33,6 @@ WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PAT
 
 # User sessions tracking
 user_sessions = {}
-user_conversations = {}  # Stores all message IDs for each user
-cleanup_tasks = {}  # Separate structure for cleanup tasks
 bot_stats = {
     "total_users": 0,
     "active_sessions": 0,
@@ -49,9 +47,6 @@ REQUIRED_CHANNELS = {
 
 # Welcome image URL
 WELCOME_IMAGE_URL = "https://envs.sh/keh.jpg"
-
-# Message cleanup timer (in seconds)
-MESSAGE_CLEANUP_TIMER = 20  # 1 minute
 
 # Model configuration
 MODELS = {
@@ -190,39 +185,6 @@ def channel_required(func):
         return await func(update, context, *args, **kwargs)
     return wrapped
 
-async def schedule_conversation_cleanup(chat_id, context):
-    """Schedule conversation cleanup after a certain time"""
-    await asyncio.sleep(MESSAGE_CLEANUP_TIMER)
-    try:
-        if chat_id in user_conversations and user_conversations[chat_id]:
-            for msg_id in user_conversations[chat_id]:
-                try:
-                    await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                except Exception as e:
-                    logging.error(f"Error deleting message {msg_id}: {e}")
-            # Clear the conversation history
-            user_conversations[chat_id] = []
-        # Remove the cleanup task for this chat
-        cleanup_tasks.pop(chat_id, None)
-    except Exception as e:
-        logging.error(f"Error in conversation cleanup: {e}")
-
-async def track_message(chat_id, message_id, context, exclude_cleanup=False):
-    """Track a message for future deletion, unless excluded"""
-    if exclude_cleanup:
-        return  # Skip tracking for messages that should not be auto-deleted
-
-    if chat_id not in user_conversations:
-        user_conversations[chat_id] = []
-    user_conversations[chat_id].append(message_id)
-    
-    # Cancel any existing cleanup task for this chat
-    if chat_id in cleanup_tasks:
-        cleanup_tasks[chat_id].cancel()
-    
-    # Schedule a new cleanup task
-    cleanup_tasks[chat_id] = asyncio.create_task(schedule_conversation_cleanup(chat_id, context))
-
 # ======================
 # Database Setup
 # ======================
@@ -286,17 +248,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await save_user(user_id, username)
     
     # Send welcome message with photo and inline buttons
-    welcome_msg = await context.bot.send_photo(
+    await context.bot.send_photo(
         chat_id=user_id,
         photo=WELCOME_IMAGE_URL,
         caption="**Welcome to Multi-AI Bot!**\n\nChoose your preferred model:",
         reply_markup=inline_keyboard,
         parse_mode="Markdown"
     )
-    
-    # Track the user's /start command but exclude the welcome message from cleanup
-    await track_message(user_id, update.message.message_id, context)
-    await track_message(user_id, welcome_msg.message_id, context, exclude_cleanup=True)
 
 @channel_required
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -313,16 +271,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /help - Show this message
 /terms - View terms and conditions
 """
-    help_msg = await update.message.reply_text(help_text, parse_mode="Markdown")
-    await track_message(update.message.chat_id, help_msg.message_id, context)
-    await track_message(update.message.chat_id, update.message.message_id, context)
+    await update.message.reply_text(help_text, parse_mode="Markdown")
 
 @channel_required
 async def terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show terms and conditions"""
-    terms_msg = await update.message.reply_text(TERMS_TEXT, parse_mode="Markdown")
-    await track_message(update.message.chat_id, terms_msg.message_id, context)
-    await track_message(update.message.chat_id, update.message.message_id, context)
+    await update.message.reply_text(TERMS_TEXT, parse_mode="Markdown")
 
 @channel_required
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -390,11 +344,9 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logging.error(f"Failed to send to {user['user_id']}: {e}")
             failed += 1
     
-    broadcast_msg = await update.message.reply_text(
+    await update.message.reply_text(
         f"✅ Broadcast completed:\n• Sent to: {successful} users\n• Failed: {failed}"
     )
-    await track_message(update.message.chat_id, broadcast_msg.message_id, context)
-    await track_message(update.message.chat_id, update.message.message_id, context)
 
 @channel_required
 async def contactus(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -413,9 +365,7 @@ We value your feedback and are here to assist you with any questions or issues y
 
 We'll respond within 24 hours!
 """
-    contact_msg = await update.message.reply_text(contact_text, reply_markup=reply_markup)
-    await track_message(update.message.chat_id, contact_msg.message_id, context)
-    await track_message(update.message.chat_id, update.message.message_id, context)
+    await update.message.reply_text(contact_text, reply_markup=reply_markup)
 
 # ======================
 # Message Handlers
@@ -432,12 +382,10 @@ async def handle_inline_selection(update: Update, context: ContextTypes.DEFAULT_
         await update_model_usage(user_id, model_choice)
         
         await query.answer()
-        response_msg = await query.message.reply_text(
+        await query.message.reply_text(
             f"✅ You selected *{MODELS[model_choice]['display_name']}*.\nSend me your message!",
             parse_mode="Markdown"
         )
-        await track_message(user_id, response_msg.message_id, context)
-        await track_message(user_id, query.message.message_id, context)
     else:
         await query.answer("❌ Invalid selection!", show_alert=True)
 
@@ -449,9 +397,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
 
     if user_id not in user_sessions:
-        error_msg = await update.message.reply_text("❗ Please select a model first using /start.")
-        await track_message(user_id, error_msg.message_id, context)
-        await track_message(user_id, update.message.message_id, context)
+        await update.message.reply_text("❗ Please select a model first using /start.")
         return
 
     await save_user(user_id, username)
@@ -480,26 +426,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             response = requests.post(OPENROUTER_URL, headers=headers, json=payload)
             if response.status_code == 401:
-                error_msg = await update.message.reply_text("🔐 Error: Invalid API key for this model")
-                await track_message(user_id, error_msg.message_id, context)
-                await track_message(user_id, update.message.message_id, context)
+                await update.message.reply_text("🔐 Error: Invalid API key for this model")
                 return
                 
             data = response.json()
             if "choices" in data:
                 reply = data["choices"][0]["message"]["content"]
-                ai_msg = await update.message.reply_text(f"💡 *AI Response:*\n\n{reply}", parse_mode="Markdown")
-                await track_message(user_id, ai_msg.message_id, context)
-                await track_message(user_id, update.message.message_id, context)
+                await update.message.reply_text(f"💡 *AI Response:*\n\n{reply}", parse_mode="Markdown")
             else:
                 error_msg = data.get('error', {}).get('message', 'Unknown error')
-                error_response = await update.message.reply_text(f"⚠️ Error: {error_msg}")
-                await track_message(user_id, error_response.message_id, context)
-                await track_message(user_id, update.message.message_id, context)
+                await update.message.reply_text(f"⚠️ Error: {error_msg}")
         except Exception as e:
-            error_msg = await update.message.reply_text(f"❌ Failed to connect: {str(e)}")
-            await track_message(user_id, error_msg.message_id, context)
-            await track_message(user_id, update.message.message_id, context)
+            await update.message.reply_text(f"❌ Failed to connect: {str(e)}")
 
 # ======================
 # Webhook Handling
