@@ -110,7 +110,7 @@ async def verify_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(
             chat_id=query.from_user.id,
             text="**Welcome to Multi-AI Bot!**\n\nChoose your preferred model:",
-            reply_markup=markup,
+            reply_markup=inline_keyboard,
             parse_mode="Markdown"
         )
     else:
@@ -211,12 +211,11 @@ MODELS = {
     }
 }
 
-# Keyboard layout
-keyboard = [
-    ["🧠 DeepSeek R1", "🤖 Mistral"],
-    ["💬 ChatGPT", "🦙 LLaMA V3"]
-]
-markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+# Inline keyboard layout
+inline_keyboard = InlineKeyboardMarkup([
+    [InlineKeyboardButton("🧠 DeepSeek R1", callback_data="DeepSeek R1"), InlineKeyboardButton("🤖 Mistral", callback_data="Mistral")],
+    [InlineKeyboardButton("💬 ChatGPT", callback_data="ChatGPT"), InlineKeyboardButton("🦙 LLaMA V3", callback_data="LLaMA V3")]
+])
 
 # Terms and Conditions
 TERMS_TEXT = """
@@ -249,9 +248,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id=user_id,
         photo=WELCOME_IMAGE_URL,
         caption="**Welcome to Multi-AI Bot!**\n\nChoose your preferred model:",
-        reply_markup=markup,
+        reply_markup=inline_keyboard,  # Use inline keyboard here
         parse_mode="Markdown"
     )
+
+async def handle_inline_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle inline button selection"""
+    query = update.callback_query
+    model_choice = query.data
+    user_id = query.from_user.id
+
+    if model_choice in MODELS:
+        user_sessions[user_id] = MODELS[model_choice]
+        bot_stats["model_usage"][model_choice] = bot_stats["model_usage"].get(model_choice, 0) + 1
+        await update_model_usage(user_id, model_choice)
+        
+        await query.answer()  # Acknowledge the button press
+        await query.message.reply_text(
+            f"✅ You selected *{model_choice}*.\nSend me your message!",
+            parse_mode="Markdown"
+        )
+    else:
+        await query.answer("❌ Invalid selection!", show_alert=True)
 
 @channel_required
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -375,7 +393,7 @@ async def select_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await update.message.reply_text(
             f"✅ You selected *{model_choice}*.\nSend me your message!",
-            reply_markup=markup,
+            reply_markup=inline_keyboard,
             parse_mode="Markdown"
         )
 
@@ -461,6 +479,7 @@ async def main():
     app.add_handler(MessageHandler(filters.Regex("^(🧠|🤖|💬|🦙)"), select_model))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(verify_membership, pattern="^verify_membership$"))
+    app.add_handler(CallbackQueryHandler(handle_inline_selection))
 
     if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
         print("🌐 Running in webhook mode...")
