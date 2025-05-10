@@ -73,6 +73,30 @@ MODELS = {
         "model_name": "mistralai/mistral-small-3.1-24b-instruct:free",
         "api_key": os.getenv('MISTRAL_KEY'),
         "display_name": "🤖 Mistral"
+    },
+    "QWEN": {
+        "api_type": "openrouter",
+        "model_name": "qwen/qwen3-235b-a22b:free",
+        "api_key": os.getenv('QWEEN_API_KEY'),
+        "display_name": "🌟 QWEN"
+    },
+    "Claude": {
+        "api_type": "openrouter",
+        "model_name": "featherless/qwerky-72b:free",
+        "api_key": os.getenv('CLAUDE_API_KEY'),
+        "display_name": "🦉 Claude"
+    },
+    "DeepHermes": {
+        "api_type": "openrouter",
+        "model_name": "nousresearch/deephermes-3-mistral-24b-preview:free",
+        "api_key": os.getenv('DeepHermes_API_KEY'),
+        "display_name": "🔥 DeepHermes"
+    },
+    "Gemma": {
+        "api_type": "openrouter",
+        "model_name": "google/gemma-3-27b-it:free",
+        "api_key": os.getenv('GEMMA_API_KEY'),
+        "display_name": "💎 Gemma"
     }
 }
 
@@ -81,7 +105,11 @@ inline_keyboard = InlineKeyboardMarkup([
     [InlineKeyboardButton("🧠 DeepSeek R1", callback_data="DeepSeek R1"), 
      InlineKeyboardButton("🤖 Mistral", callback_data="Mistral")],
     [InlineKeyboardButton("💬 ChatGPT", callback_data="ChatGPT"), 
-     InlineKeyboardButton("🦙 LLaMA V3", callback_data="LLaMA V3")]
+     InlineKeyboardButton("🦙 LLaMA V3", callback_data="LLaMA V3")],
+    [InlineKeyboardButton("🌟 QWEN", callback_data="QWEN"), 
+     InlineKeyboardButton("🦉 Claude", callback_data="Claude")],
+    [InlineKeyboardButton("🔥 DeepHermes", callback_data="DeepHermes"), 
+     InlineKeyboardButton("💎 Gemma", callback_data="Gemma")]
 ])
 
 # Terms and Conditions
