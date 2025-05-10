@@ -14,10 +14,10 @@ from telegram.ext import (
 )
 import requests
 from pymongo import MongoClient
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
-
 import logging
+
 logging.basicConfig(level=logging.DEBUG)
 
 # Load environment variables
@@ -33,20 +33,73 @@ WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PAT
 
 # User sessions tracking
 user_sessions = {}
+user_messages = {}  # Stores message IDs for cleanup
 bot_stats = {
     "total_users": 0,
     "active_sessions": 0,
     "model_usage": {}
 }
 
-# Force join configuration - Format: {"Channel Display Name": "@channel_username"}
+# Force join configuration
 REQUIRED_CHANNELS = {
-    "MAIN CHANNEL": "@Freenethubz",  # Use @username format
-    "ANNOUNCEMENT CHANNEL": "@megahubbots"  # Use @username format
+    "MAIN CHANNEL": "@Freenethubz",
+    "ANNOUNCEMENT CHANNEL": "@megahubbots"
 }
 
 # Welcome image URL
 WELCOME_IMAGE_URL = "https://envs.sh/keh.jpg"
+
+# Message cleanup timer (in seconds)
+MESSAGE_CLEANUP_TIMER = 300  # 5 minutes
+
+# Model configuration
+MODELS = {
+    "DeepSeek R1": {
+        "api_type": "openrouter",
+        "model_name": "deepseek/deepseek-r1:free",
+        "api_key": os.getenv('DEEPSEEK_R1_KEY'),
+        "display_name": "🧠 DeepSeek R1"
+    },
+    "LLaMA V3": {
+        "api_type": "openrouter",
+        "model_name": "meta-llama/llama-4-scout:free",
+        "api_key": os.getenv('LLAMA_KEY'),
+        "display_name": "🦙 LLaMA V3"
+    },
+    "ChatGPT": {
+        "api_type": "openrouter",
+        "model_name": "openai/gpt-3.5-turbo",
+        "api_key": os.getenv('CHATGPT_KEY'),
+        "display_name": "💬 ChatGPT"
+    },
+    "Mistral": {
+        "api_type": "openrouter",
+        "model_name": "mistralai/mistral-small-3.1-24b-instruct:free",
+        "api_key": os.getenv('MISTRAL_KEY'),
+        "display_name": "🤖 Mistral"
+    }
+}
+
+# Inline keyboard layout
+inline_keyboard = InlineKeyboardMarkup([
+    [InlineKeyboardButton("🧠 DeepSeek R1", callback_data="DeepSeek R1"), 
+     InlineKeyboardButton("🤖 Mistral", callback_data="Mistral")],
+    [InlineKeyboardButton("💬 ChatGPT", callback_data="ChatGPT"), 
+     InlineKeyboardButton("🦙 LLaMA V3", callback_data="LLaMA V3")]
+])
+
+# Terms and Conditions
+TERMS_TEXT = """
+📜 *Terms and Conditions*
+
+1. This bot provides AI services for educational purposes only.
+2. We don't store your conversation history permanently.
+3. Don't share sensitive personal information.
+4. The bot may have usage limits.
+5. Models are provided by third-party APIs.
+
+By using this bot, you agree to these terms.
+"""
 
 # ======================
 # Helper Functions
@@ -60,7 +113,7 @@ async def is_user_member(user_id, bot):
     for channel_name, channel_username in REQUIRED_CHANNELS.items():
         try:
             chat_member = await bot.get_chat_member(
-                chat_id=channel_username,  # Use the @username directly
+                chat_id=channel_username,
                 user_id=user_id
             )
             if chat_member.status not in ["member", "administrator", "creator"]:
@@ -81,7 +134,6 @@ def get_join_keyboard():
     """Create keyboard with join buttons"""
     buttons = []
     for channel_name, channel_username in REQUIRED_CHANNELS.items():
-        # Convert @username to t.me/username for the URL
         channel_url = f"https://t.me/{channel_username[1:]}"
         buttons.append([InlineKeyboardButton(channel_name, url=channel_url)])
     buttons.append([InlineKeyboardButton("✅ Verify Membership", callback_data="verify_membership")])
@@ -102,7 +154,7 @@ async def verify_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
 
     if await is_user_member(query.from_user.id, context.bot):
-        await query.answer()  # Single use here
+        await query.answer()
         await query.message.edit_text(
             "✅ Verification successful! You can now use all bot features.",
             parse_mode="Markdown"
@@ -115,10 +167,9 @@ async def verify_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await query.answer(
-            text="❌ 𝙔𝙤𝙪 𝙝𝙖𝙫𝙚𝙣'𝙩 𝙟𝙤𝙞𝙣𝙚𝙙 𝙖𝙡𝙡 𝙘𝙝𝙖𝙣𝙣𝙚𝙡𝙨 𝙮𝙚𝙩!",
+            text="❌ You haven't joined all channels yet!",
             show_alert=True
         )
-
 
 def channel_required(func):
     """Decorator to enforce channel membership before executing any command"""
@@ -126,18 +177,33 @@ def channel_required(func):
     async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         user_id = update.effective_user.id
         
-        # Always allow admin commands
         if is_admin(user_id):
             return await func(update, context, *args, **kwargs)
             
-        # Check channel membership
         if not await is_user_member(user_id, context.bot):
             await ask_user_to_join(update)
             return
         
-        # If user is member, proceed with original command
         return await func(update, context, *args, **kwargs)
     return wrapped
+
+async def schedule_message_deletion(chat_id, message_ids, context):
+    """Schedule messages for deletion after a certain time"""
+    await asyncio.sleep(MESSAGE_CLEANUP_TIMER)
+    try:
+        for msg_id in message_ids:
+            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+    except Exception as e:
+        logging.error(f"Error deleting messages: {e}")
+
+async def track_message(chat_id, message_id, context):
+    """Track a message for future deletion"""
+    if chat_id not in user_messages:
+        user_messages[chat_id] = []
+    user_messages[chat_id].append(message_id)
+    
+    # Schedule cleanup
+    asyncio.create_task(schedule_message_deletion(chat_id, [message_id], context))
 
 # ======================
 # Database Setup
@@ -160,7 +226,7 @@ async def save_user(user_id: int, username: str = None):
     users.update_one(
         {"user_id": user_id},
         {
-            "$setOnInsert": {  # Only set these fields if the user is new
+            "$setOnInsert": {
                 "models_used": []
             },
             "$set": {
@@ -168,10 +234,11 @@ async def save_user(user_id: int, username: str = None):
                 "username": username,
                 "last_active": datetime.now()
             },
-            "$inc": {"message_count": 1}  # Increment message count
+            "$inc": {"message_count": 1}
         },
         upsert=True
     )
+
 async def update_model_usage(user_id: int, model_name: str):
     """Update which models a user has used"""
     try:
@@ -179,56 +246,13 @@ async def update_model_usage(user_id: int, model_name: str):
         db.users.update_one(
             {"user_id": user_id},
             {
-                "$addToSet": {"models_used": model_name},  # Add model if not already in the list
-                "$set": {"last_active": datetime.now()}  # Update last active timestamp
+                "$addToSet": {"models_used": model_name},
+                "$set": {"last_active": datetime.now()}
             }
         )
     except Exception as e:
         logging.error(f"Error updating model usage for user {user_id}: {e}")
-        raise  # Optionally re-raise the exception for higher-level handling
-
-# Model configuration
-MODELS = {
-    "🧠 DeepSeek R1": {
-        "api_type": "openrouter",
-        "model_name": "deepseek/deepseek-r1:free",
-        "api_key": os.getenv('DEEPSEEK_R1_KEY')
-    },
-    "🦙 LLaMA V3": {
-        "api_type": "openrouter",
-        "model_name": "meta-llama/llama-4-scout:free",
-        "api_key": os.getenv('LLAMA_KEY')
-    },
-    "💬 ChatGPT": {
-        "api_type": "openrouter",
-        "model_name": "openai/gpt-3.5-turbo",
-        "api_key": os.getenv('CHATGPT_KEY')
-    },
-    "🤖 Mistral": {
-        "api_type": "openrouter",
-        "model_name": "mistralai/mistral-small-3.1-24b-instruct:free",
-        "api_key": os.getenv('MISTRAL_KEY')
-    }
-}
-
-# Inline keyboard layout
-inline_keyboard = InlineKeyboardMarkup([
-    [InlineKeyboardButton("🧠 DeepSeek R1", callback_data="DeepSeek R1"), InlineKeyboardButton("🤖 Mistral", callback_data="Mistral")],
-    [InlineKeyboardButton("💬 ChatGPT", callback_data="ChatGPT"), InlineKeyboardButton("🦙 LLaMA V3", callback_data="LLaMA V3")]
-])
-
-# Terms and Conditions
-TERMS_TEXT = """
-📜 *Terms and Conditions*
-
-1. This bot provides AI services for educational purposes only.
-2. We don't store your conversation history permanently.
-3. Don't share sensitive personal information.
-4. The bot may have usage limits.
-5. Models are provided by third-party APIs.
-
-By using this bot, you agree to these terms.
-"""
+        raise
 
 # ======================
 # Command Handlers
@@ -239,37 +263,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     username = update.message.from_user.username
     
-    # Existing start functionality for verified users
     if user_id not in user_sessions:
         bot_stats["total_users"] += 1
         await save_user(user_id, username)
     
-    await context.bot.send_photo(
+    # Send welcome message with inline buttons
+    welcome_msg = await context.bot.send_message(
         chat_id=user_id,
-        photo=WELCOME_IMAGE_URL,
-        caption="**Welcome to Multi-AI Bot!**\n\nChoose your preferred model:",
-        reply_markup=inline_keyboard,  # Use inline keyboard here
+        text="**Welcome to Multi-AI Bot!**\n\nChoose your preferred model:",
+        reply_markup=inline_keyboard,
         parse_mode="Markdown"
     )
-
-async def handle_inline_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle inline button selection"""
-    query = update.callback_query
-    model_choice = query.data  # Get the callback data
-    user_id = query.from_user.id
-
-    if model_choice in MODELS:
-        user_sessions[user_id] = MODELS[model_choice]
-        bot_stats["model_usage"][model_choice] = bot_stats["model_usage"].get(model_choice, 0) + 1
-        await update_model_usage(user_id, model_choice)
-        
-        await query.answer()  # Acknowledge the button press
-        await query.message.reply_text(
-            f"✅ You selected *{model_choice}*.\nSend me your message!",
-            parse_mode="Markdown"
-        )
-    else:
-        await query.answer("❌ Invalid selection!", show_alert=True)
+    
+    # Track the welcome message for cleanup
+    await track_message(user_id, welcome_msg.message_id, context)
 
 @channel_required
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -286,12 +293,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /help - Show this message
 /terms - View terms and conditions
 """
-    await update.message.reply_text(help_text, parse_mode="Markdown")
+    help_msg = await update.message.reply_text(help_text, parse_mode="Markdown")
+    await track_message(update.message.chat_id, help_msg.message_id, context)
 
 @channel_required
 async def terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show terms and conditions"""
-    await update.message.reply_text(TERMS_TEXT, parse_mode="Markdown")
+    terms_msg = await update.message.reply_text(TERMS_TEXT, parse_mode="Markdown")
+    await track_message(update.message.chat_id, terms_msg.message_id, context)
 
 @channel_required
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -301,23 +310,16 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        # Connect to the database
         db = get_database()
-
-        # Fetch total users from MongoDB
-        total_users = db.users.count_documents({})  # Count all users in the collection
-
-        # Fetch active sessions (still in memory)
+        total_users = db.users.count_documents({})
         active_sessions = len(user_sessions)
 
-        # Fetch model usage statistics from MongoDB
         model_usage = {}
-        users = db.users.find({}, {"models_used": 1})  # Fetch only the models_used field
+        users = db.users.find({}, {"models_used": 1})
         for user in users:
             for model in user.get("models_used", []):
                 model_usage[model] = model_usage.get(model, 0) + 1
 
-        # Prepare stats text
         stats_text = f"""
 📊 *Bot Statistics*
 
@@ -328,11 +330,12 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for model, count in model_usage.items():
             stats_text += f"  - {model}: {count}\n"
 
-        # Send the stats to the admin
-        await update.message.reply_text(stats_text, parse_mode="Markdown")
+        stats_msg = await update.message.reply_text(stats_text, parse_mode="Markdown")
+        await track_message(update.message.chat_id, stats_msg.message_id, context)
     except Exception as e:
         logging.error(f"Error fetching stats: {e}")
-        await update.message.reply_text("❌ Failed to fetch statistics.")
+        error_msg = await update.message.reply_text("❌ Failed to fetch statistics.")
+        await track_message(update.message.chat_id, error_msg.message_id, context)
 
 @channel_required
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -356,7 +359,8 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(f"Failed to send to {user_id}: {e}")
     
-    await update.message.reply_text(f"✅ Broadcast sent to {len(user_sessions)} users.")
+    broadcast_msg = await update.message.reply_text(f"✅ Broadcast sent to {len(user_sessions)} users.")
+    await track_message(update.message.chat_id, broadcast_msg.message_id, context)
 
 @channel_required
 async def contactus(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -368,18 +372,39 @@ async def contactus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     contact_text = """
-📞 𝐂𝐨𝐧𝐭𝐚𝐜𝐭 𝐔𝐬
+📞 Contact Us
 
 For support or inquiries, feel free to reach out to us through the provided buttons.
 We value your feedback and are here to assist you with any questions or issues you may have.
 
 We'll respond within 24 hours!
 """
-    await update.message.reply_text(contact_text, reply_markup=reply_markup)
+    contact_msg = await update.message.reply_text(contact_text, reply_markup=reply_markup)
+    await track_message(update.message.chat_id, contact_msg.message_id, context)
 
 # ======================
 # Message Handlers
 # ======================
+async def handle_inline_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle inline button selection"""
+    query = update.callback_query
+    model_choice = query.data
+    user_id = query.from_user.id
+
+    if model_choice in MODELS:
+        user_sessions[user_id] = MODELS[model_choice]
+        bot_stats["model_usage"][model_choice] = bot_stats["model_usage"].get(model_choice, 0) + 1
+        await update_model_usage(user_id, model_choice)
+        
+        await query.answer()
+        response_msg = await query.message.reply_text(
+            f"✅ You selected *{MODELS[model_choice]['display_name']}*.\nSend me your message!",
+            parse_mode="Markdown"
+        )
+        await track_message(user_id, response_msg.message_id, context)
+    else:
+        await query.answer("❌ Invalid selection!", show_alert=True)
+
 @channel_required
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle user messages with AI response"""
@@ -388,7 +413,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
 
     if user_id not in user_sessions:
-        await update.message.reply_text("❗ Please select a model first using /start.")
+        error_msg = await update.message.reply_text("❗ Please select a model first using /start.")
+        await track_message(user_id, error_msg.message_id, context)
         return
 
     await save_user(user_id, username)
@@ -412,20 +438,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
 
         try:
+            # Indicate the bot is typing
+            await context.bot.send_chat_action(chat_id=user_id, action="typing")
+            
             response = requests.post(OPENROUTER_URL, headers=headers, json=payload)
             if response.status_code == 401:
-                await update.message.reply_text("🔐 Error: Invalid API key for this model")
+                error_msg = await update.message.reply_text("🔐 Error: Invalid API key for this model")
+                await track_message(user_id, error_msg.message_id, context)
                 return
                 
             data = response.json()
             if "choices" in data:
                 reply = data["choices"][0]["message"]["content"]
-                await update.message.reply_text(f"💡 *AI Response:*\n\n{reply}", parse_mode="Markdown")
+                ai_msg = await update.message.reply_text(f"💡 *AI Response:*\n\n{reply}", parse_mode="Markdown")
+                await track_message(user_id, ai_msg.message_id, context)
             else:
                 error_msg = data.get('error', {}).get('message', 'Unknown error')
-                await update.message.reply_text(f"⚠️ Error: {error_msg}")
+                error_response = await update.message.reply_text(f"⚠️ Error: {error_msg}")
+                await track_message(user_id, error_response.message_id, context)
         except Exception as e:
-            await update.message.reply_text(f"❌ Failed to connect: {str(e)}")
+            error_msg = await update.message.reply_text(f"❌ Failed to connect: {str(e)}")
+            await track_message(user_id, error_msg.message_id, context)
 
 # ======================
 # Webhook Handling
@@ -452,24 +485,21 @@ async def main():
     global app
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Register all handlers with channel requirement
+    # Register all handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("terms", terms))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CommandHandler("contactus", contactus))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))  # Remove select_model handler
     app.add_handler(CallbackQueryHandler(verify_membership, pattern="^verify_membership$"))
-    app.add_handler(CallbackQueryHandler(handle_inline_selection))  # Inline button handler
+    app.add_handler(CallbackQueryHandler(handle_inline_selection))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
         print("🌐 Running in webhook mode...")
         
-        # Initialize the application
         await app.initialize()
-        
-        # Set up webhook properly
         await app.bot.set_webhook(
             url=WEBHOOK_URL,
             secret_token='YourSecretToken123',
@@ -477,7 +507,6 @@ async def main():
             allowed_updates=Update.ALL_TYPES
         )
         
-        # Configure aiohttp server with webhook endpoint
         server = web.Application()
         server.router.add_post(WEBHOOK_PATH, handle_webhook)
         server.router.add_get('/', health_check)
