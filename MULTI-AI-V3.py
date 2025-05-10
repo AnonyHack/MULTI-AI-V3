@@ -17,6 +17,7 @@ from pymongo import MongoClient
 from datetime import datetime
 from functools import wraps
 import logging
+import textwrap
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -112,15 +113,15 @@ inline_keyboard = InlineKeyboardMarkup([
      InlineKeyboardButton("💎 Gemma", callback_data="Gemma")]
 ])
 
-# Terms and Conditions
+# Terms and Conditions with accept button
 TERMS_TEXT = """
 📜 *Terms and Conditions*
 
-1. This bot provides AI services for educational purposes only.
-2. We don't store your conversation history permanently.
-3. Don't share sensitive personal information.
-4. The bot may have usage limits.
-5. Models are provided by third-party APIs.
+1️⃣ This bot provides AI services for educational purposes only.
+2️⃣ We don't store your conversation history permanently.
+3️⃣ Don't share sensitive personal information.
+4️⃣ The bot may have usage limits.
+5️⃣ Models are provided by third-party APIs.
 
 By using this bot, you agree to these terms.
 """
@@ -167,8 +168,8 @@ async def ask_user_to_join(update: Update):
     """Show join buttons to user"""
     await update.message.reply_text(
         "🚨 To use this bot, you must join our channels first! 🚨\n\n"
-        "1. Click the buttons below to join our channels\n"
-        "2. Then click '✅ Verify Membership' to confirm",
+        "1️⃣ Click the buttons below to join our channels\n"
+        "2️⃣ Then click '✅ Verify Membership' to confirm",
         reply_markup=get_join_keyboard(),
         parse_mode="Markdown"
     )
@@ -235,7 +236,8 @@ async def save_user(user_id: int, username: str = None):
         {"user_id": user_id},
         {
             "$setOnInsert": {
-                "models_used": []
+                "models_used": [],
+                "accepted_terms": False
             },
             "$set": {
                 "user_id": user_id,
@@ -262,6 +264,18 @@ async def update_model_usage(user_id: int, model_name: str):
         logging.error(f"Error updating model usage for user {user_id}: {e}")
         raise
 
+async def accept_terms(user_id: int):
+    """Mark user as having accepted terms"""
+    try:
+        db = get_database()
+        db.users.update_one(
+            {"user_id": user_id},
+            {"$set": {"accepted_terms": True}}
+        )
+    except Exception as e:
+        logging.error(f"Error updating terms acceptance for user {user_id}: {e}")
+        raise
+    
 # ======================
 # Command Handlers
 # ======================
@@ -290,10 +304,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = """
 🆘 *How to use this bot:*
 
-1. Use /start to begin
-2. Select an AI model from the menu
-3. Just type to chat with the AI!
-4. Change models anytime by selecting a new one
+1️⃣ Use /start to begin
+2️⃣ Select an AI model from the menu
+3️⃣ Just type to chat with the AI!
+4️⃣ Change models anytime by selecting a new one
 
 📝 *Available Commands:*
 /help - Show this message
@@ -303,12 +317,29 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @channel_required
 async def terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show terms and conditions"""
-    await update.message.reply_text(TERMS_TEXT, parse_mode="Markdown")
+    """Show terms and conditions with accept button"""
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ I Accept T&C", callback_data="accept_terms")]
+    ])
+    await update.message.reply_text(TERMS_TEXT, 
+                                  reply_markup=keyboard, 
+                                  parse_mode="Markdown")
+
+async def accept_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle terms acceptance callback"""
+    query = update.callback_query
+    user_id = query.from_user.id
+    
+    await accept_terms(user_id)
+    await query.answer("✅ You have accepted the Terms & Conditions!", show_alert=True)
+    await query.message.edit_text(
+        f"{TERMS_TEXT}\n\n✅ *You have accepted these terms.*",
+        parse_mode="Markdown"
+    )
 
 @channel_required
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin command: show usage statistics"""
+    """Admin command: show enhanced usage statistics"""
     if not is_admin(update.message.from_user.id):
         await update.message.reply_text("❌ Admin access required.")
         return
@@ -317,8 +348,12 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db = get_database()
         total_users = db.users.count_documents({})
         active_sessions = len(user_sessions)
+        active_today = db.users.count_documents({
+            "last_active": {"$gte": datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)}
+        })
+        accepted_terms = db.users.count_documents({"accepted_terms": True})
 
-        # Use display names for model usage stats
+        # Model usage statistics with emojis
         model_usage = {model["display_name"]: 0 for model in MODELS.values()}
         users = db.users.find({}, {"models_used": 1})
         for user in users:
@@ -327,15 +362,25 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if display_name in model_usage:
                     model_usage[display_name] += 1
 
-        stats_text = f"""
-📊 *Bot Statistics*
+        # Create a visually appealing stats message
+        stats_text = """
+📊 *Advanced Bot Statistics* 📊
 
-• Total users: {total_users}
-• Active sessions: {active_sessions}
-• Model usage:
-"""
-        for model, count in model_usage.items():
-            stats_text += f"  - {model}: {count}\n"
+👥 *Users:*
+├─ Total Users: {}
+├─ Active Today: {}
+├─ Accepted T&C: {}
+└─ Active Sessions: {}
+
+📈 *Model Usage Statistics:*
+""".format(total_users, active_today, accepted_terms, active_sessions)
+
+        # Add model usage with progress bars
+        max_usage = max(model_usage.values()) if model_usage.values() else 1
+        for model, count in sorted(model_usage.items(), key=lambda x: x[1], reverse=True):
+            percentage = (count / max_usage) * 100 if max_usage > 0 else 0
+            progress_bar = "⬛" * int(percentage / 10) + "⬜" * (10 - int(percentage / 10))
+            stats_text += f"\n{model}: {count}\n{progress_bar} {int(percentage)}%\n"
 
         await update.message.reply_text(stats_text, parse_mode="Markdown")
     except Exception as e:
@@ -344,7 +389,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @channel_required
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin command: broadcast message to all users"""
+    """Enhanced broadcast command with rich formatting"""
     if not is_admin(update.message.from_user.id):
         await update.message.reply_text("❌ Admin access required.")
         return
@@ -360,11 +405,20 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     successful = 0
     failed = 0
     
+    # Create a beautifully formatted broadcast message
+    broadcast_message = f"""
+📣 *Important Announcement* 📣
+━━━━━━━━━━━━━━━━━━━━
+{message}
+━━━━━━━━━━━━━━━━━━━━
+💡 Sent via Multi-AI Bot Broadcast System
+"""
+    
     for user in users:
         try:
             await context.bot.send_message(
                 chat_id=user["user_id"],
-                text=f"📢 *Announcement:*\n\n{message}",
+                text=broadcast_message,
                 parse_mode="Markdown"
             )
             successful += 1
@@ -372,9 +426,18 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logging.error(f"Failed to send to {user['user_id']}: {e}")
             failed += 1
     
-    await update.message.reply_text(
-        f"✅ Broadcast completed:\n• Sent to: {successful} users\n• Failed: {failed}"
-    )
+    # Send broadcast report to admin
+    report_message = f"""
+📊 *Broadcast Report* 📊
+━━━━━━━━━━━━━━━━━━━━
+✅ Successfully sent: {successful} users
+❌ Failed to send: {failed} users
+📝 Total recipients: {successful + failed}
+━━━━━━━━━━━━━━━━━━━━
+📋 Message Preview:
+{textwrap.shorten(message, width=50, placeholder="...")}
+"""
+    await update.message.reply_text(report_message, parse_mode="Markdown")
 
 @channel_required
 async def contactus(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -386,14 +449,14 @@ async def contactus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     contact_text = """
-📞 Contact Us
+📞 *Contact Us*
 
 For support or inquiries, feel free to reach out to us through the provided buttons.
 We value your feedback and are here to assist you with any questions or issues you may have.
 
 We'll respond within 24 hours!
 """
-    await update.message.reply_text(contact_text, reply_markup=reply_markup)
+    await update.message.reply_text(contact_text, reply_markup=reply_markup, parse_mode="Markdown")
 
 # ======================
 # Message Handlers
@@ -414,6 +477,8 @@ async def handle_inline_selection(update: Update, context: ContextTypes.DEFAULT_
             f"✅ You selected *{MODELS[model_choice]['display_name']}*.\nSend me your message!",
             parse_mode="Markdown"
         )
+    elif model_choice == "accept_terms":
+        await accept_terms_callback(update, context)
     else:
         await query.answer("❌ Invalid selection!", show_alert=True)
 
