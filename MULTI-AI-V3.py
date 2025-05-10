@@ -207,8 +207,11 @@ async def schedule_conversation_cleanup(chat_id, context):
     except Exception as e:
         logging.error(f"Error in conversation cleanup: {e}")
 
-async def track_message(chat_id, message_id, context):
-    """Track a message for future deletion"""
+async def track_message(chat_id, message_id, context, exclude_cleanup=False):
+    """Track a message for future deletion, unless excluded"""
+    if exclude_cleanup:
+        return  # Skip tracking for messages that should not be auto-deleted
+
     if chat_id not in user_conversations:
         user_conversations[chat_id] = []
     user_conversations[chat_id].append(message_id)
@@ -291,9 +294,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
     
-    # Track the welcome message for cleanup
-    await track_message(user_id, welcome_msg.message_id, context)
-    await track_message(user_id, update.message.message_id, context)  # Track user's /start command
+    # Track the user's /start command but exclude the welcome message from cleanup
+    await track_message(user_id, update.message.message_id, context)
+    await track_message(user_id, welcome_msg.message_id, context, exclude_cleanup=True)
 
 @channel_required
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -333,11 +336,14 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_users = db.users.count_documents({})
         active_sessions = len(user_sessions)
 
-        model_usage = {}
+        # Use display names for model usage stats
+        model_usage = {model["display_name"]: 0 for model in MODELS.values()}
         users = db.users.find({}, {"models_used": 1})
         for user in users:
             for model in user.get("models_used", []):
-                model_usage[model] = model_usage.get(model, 0) + 1
+                display_name = MODELS.get(model, {}).get("display_name", model)
+                if display_name in model_usage:
+                    model_usage[display_name] += 1
 
         stats_text = f"""
 📊 *Bot Statistics*
@@ -349,14 +355,10 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for model, count in model_usage.items():
             stats_text += f"  - {model}: {count}\n"
 
-        stats_msg = await update.message.reply_text(stats_text, parse_mode="Markdown")
-        await track_message(update.message.chat_id, stats_msg.message_id, context)
-        await track_message(update.message.chat_id, update.message.message_id, context)
+        await update.message.reply_text(stats_text, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Error fetching stats: {e}")
-        error_msg = await update.message.reply_text("❌ Failed to fetch statistics.")
-        await track_message(update.message.chat_id, error_msg.message_id, context)
-        await track_message(update.message.chat_id, update.message.message_id, context)
+        await update.message.reply_text("❌ Failed to fetch statistics.")
 
 @channel_required
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
