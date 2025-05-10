@@ -51,7 +51,7 @@ REQUIRED_CHANNELS = {
 WELCOME_IMAGE_URL = "https://envs.sh/keh.jpg"
 
 # Message cleanup timer (in seconds)
-MESSAGE_CLEANUP_TIMER = 60  # 1 minute
+MESSAGE_CLEANUP_TIMER = 10  # 1 minute
 
 # Model configuration
 MODELS = {
