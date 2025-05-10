@@ -34,6 +34,7 @@ WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PAT
 # User sessions tracking
 user_sessions = {}
 user_conversations = {}  # Stores all message IDs for each user
+cleanup_tasks = {}  # Separate structure for cleanup tasks
 bot_stats = {
     "total_users": 0,
     "active_sessions": 0,
@@ -201,6 +202,8 @@ async def schedule_conversation_cleanup(chat_id, context):
                     logging.error(f"Error deleting message {msg_id}: {e}")
             # Clear the conversation history
             user_conversations[chat_id] = []
+        # Remove the cleanup task for this chat
+        cleanup_tasks.pop(chat_id, None)
     except Exception as e:
         logging.error(f"Error in conversation cleanup: {e}")
 
@@ -210,17 +213,12 @@ async def track_message(chat_id, message_id, context):
         user_conversations[chat_id] = []
     user_conversations[chat_id].append(message_id)
     
-    # Reset cleanup timer for this conversation
-    if chat_id in user_conversations:
-        # Cancel any pending cleanup tasks for this chat
-        for task in user_conversations[chat_id].get('cleanup_task', []):
-            task.cancel()
-        
-        # Schedule new cleanup
-        cleanup_task = asyncio.create_task(schedule_conversation_cleanup(chat_id, context))
-        if 'cleanup_task' not in user_conversations[chat_id]:
-            user_conversations[chat_id]['cleanup_task'] = []
-        user_conversations[chat_id]['cleanup_task'].append(cleanup_task)
+    # Cancel any existing cleanup task for this chat
+    if chat_id in cleanup_tasks:
+        cleanup_tasks[chat_id].cancel()
+    
+    # Schedule a new cleanup task
+    cleanup_tasks[chat_id] = asyncio.create_task(schedule_conversation_cleanup(chat_id, context))
 
 # ======================
 # Database Setup
