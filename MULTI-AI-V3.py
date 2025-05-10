@@ -77,7 +77,7 @@ MODELS = {
     "QWEN": {
         "api_type": "openrouter",
         "model_name": "qwen/qwen3-235b-a22b:free",
-        "api_key": os.getenv('QWEEN_API_KEY'),
+        "api_key": os.getenv('QWEN_API_KEY'),
         "display_name": "🌟 QWEN"
     },
     "Claude": {
