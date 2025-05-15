@@ -281,7 +281,12 @@ async def send_notification(bot, user_id, username, action):
         image_bytes = await generate_notification_image(bot, user_img, username, bot.first_name, action)
         
         if image_bytes:
-            caption = f"""⭐️ ｢ɴᴇᴡ ᴜꜱᴇʀ ᴀᴄᴛɪᴠɪᴛʏ ɴᴏᴛɪꜰɪᴄᴀᴛɪᴏɴ 」⭐️
+            # Create inline keyboard with Visit Bot button
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🤖 Visit Bot", url=f"https://t.me/{bot.get_me().username}")]
+            ])
+            
+            caption = f"""⭐️ ｢Uꜱᴇʀ Aᴄᴛɪᴠɪᴛʏ Nᴏᴛɪꜰɪᴄᴀᴛɪᴏɴ 」⭐️
 ━━━━━━━━•❅•°•❈•°•❅•━━━━━━━━
 ➠ 🕵🏻‍♂️ Uꜱᴇʀɴᴀᴍᴇ: @{username or 'Not set'}
 ━━━━━━━━━━━━━━━━━━━━━━━
@@ -290,19 +295,17 @@ async def send_notification(bot, user_id, username, action):
 ➠ 📦 Aᴄᴛɪᴏɴ: {action}
 ━━━━━━━━━━━━━━━━━━━━━━━
 ➠ ⏰ Tɪᴍᴇ: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-━━━━━━━━━━━━━━━━━━━━━━━
-➠ 🤖 <b>Bᴏᴛ:</b> @{bot.get_me().username}
 ━━━━━━━━•❅•°•❈•°•❅•━━━━━━━━"""
             
             await bot.send_photo(
                 chat_id=NOTIFICATION_CHANNEL,
                 photo=image_bytes,
                 caption=caption,
-                parse_mode='HTML'
+                parse_mode='HTML',
+                reply_markup=keyboard
             )
     except Exception as e:
         print(f"Error sending notification: {e}")
-
 # ======================
 # Helper Functions
 # ======================
