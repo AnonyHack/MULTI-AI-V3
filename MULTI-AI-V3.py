@@ -281,7 +281,7 @@ async def send_notification(bot, user_id, username, action):
         image_bytes = await generate_notification_image(bot, user_img, username, bot.first_name, action)
         
         if image_bytes:
-            caption = f"""⭐️ ｢Uꜱᴇʀ Aᴄᴛɪᴠɪᴛʏ Nᴏᴛɪꜰɪᴄᴀᴛɪᴏɴ 」⭐️
+            caption = f"""⭐️ ｢ɴᴇᴡ ᴜꜱᴇʀ ᴀᴄᴛɪᴠɪᴛʏ ɴᴏᴛɪꜰɪᴄᴀᴛɪᴏɴ 」⭐️
 ━━━━━━━━•❅•°•❈•°•❅•━━━━━━━━
 ➠ 🕵🏻‍♂️ Uꜱᴇʀɴᴀᴍᴇ: @{username or 'Not set'}
 ━━━━━━━━━━━━━━━━━━━━━━━
