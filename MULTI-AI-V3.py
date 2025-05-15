@@ -274,8 +274,6 @@ async def generate_notification_image(bot, user_img, user_name, bot_name, action
         print(f"Image generation error: {e}")
         return None
 
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-
 async def send_notification(bot, user_id, username, action):
     """Send notification to channel with generated image"""
     try:
@@ -292,22 +290,18 @@ async def send_notification(bot, user_id, username, action):
 ➠ 📦 Aᴄᴛɪᴏɴ: {action}
 ━━━━━━━━━━━━━━━━━━━━━━━
 ➠ ⏰ Tɪᴍᴇ: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+━━━━━━━━━━━━━━━━━━━━━━━
+➠ 🤖 <b>Bᴏᴛ:</b> @{bot.get_me().username}
 ━━━━━━━━•❅•°•❈•°•❅•━━━━━━━━"""
-
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🤖 Visit Bot", url=f"https://t.me/{bot.get_me().username}")]
-            ])
-
+            
             await bot.send_photo(
                 chat_id=NOTIFICATION_CHANNEL,
                 photo=image_bytes,
                 caption=caption,
-                parse_mode='HTML',
-                reply_markup=keyboard  # Add inline button here
+                parse_mode='HTML'
             )
     except Exception as e:
         print(f"Error sending notification: {e}")
-
 
 # ======================
 # Helper Functions
