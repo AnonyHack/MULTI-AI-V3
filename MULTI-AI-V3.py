@@ -281,9 +281,12 @@ async def send_notification(bot, user_id, username, action):
         image_bytes = await generate_notification_image(bot, user_img, username, bot.first_name, action)
         
         if image_bytes:
+            # Get bot info first
+            bot_info = await bot.get_me()
+            
             # Create inline keyboard with Visit Bot button
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🤖 Visit Bot", url=f"https://t.me/{bot.get_me().username}")]
+                [InlineKeyboardButton("🤖 Visit Bot", url=f"https://t.me/{bot_info.username}")]
             ])
             
             caption = f"""⭐️ ｢Uꜱᴇʀ Aᴄᴛɪᴠɪᴛʏ Nᴏᴛɪꜰɪᴄᴀᴛɪᴏɴ 」⭐️
@@ -295,6 +298,8 @@ async def send_notification(bot, user_id, username, action):
 ➠ 📦 Aᴄᴛɪᴏɴ: {action}
 ━━━━━━━━━━━━━━━━━━━━━━━
 ➠ ⏰ Tɪᴍᴇ: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+━━━━━━━━━━━━━━━━━━━━━━━
+➠ 🤖 <b>Bᴏᴛ:</b> @{bot_info.username}
 ━━━━━━━━•❅•°•❈•°•❅•━━━━━━━━"""
             
             await bot.send_photo(
@@ -305,7 +310,7 @@ async def send_notification(bot, user_id, username, action):
                 reply_markup=keyboard
             )
     except Exception as e:
-        print(f"Error sending notification: {e}")
+        print(f"Error sending notification: {str(e)}")
 # ======================
 # Helper Functions
 # ======================
