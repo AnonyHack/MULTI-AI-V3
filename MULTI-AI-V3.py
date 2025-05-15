@@ -286,7 +286,7 @@ async def send_notification(bot, user_id, username, action):
             
             # Create inline keyboard with Visit Bot button
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🤖 Visit Bot", url=f"https://t.me/{bot_info.username}")]
+                [InlineKeyboardButton("🤖 Vɪꜱɪᴛ Bᴏᴛ", url=f"https://t.me/{bot_info.username}")]
             ])
             
             caption = f"""⭐️ ｢Uꜱᴇʀ Aᴄᴛɪᴠɪᴛʏ Nᴏᴛɪꜰɪᴄᴀᴛɪᴏɴ 」⭐️
