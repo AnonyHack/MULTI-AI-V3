@@ -36,7 +36,7 @@ WEBHOOK_PATH = f"/{TELEGRAM_BOT_TOKEN}"
 WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PATH}"
 
 # Notification channel
-NOTIFICATION_CHANNEL = "@smmserviceslogs"  # Channel for notifications
+NOTIFICATION_CHANNEL = "@xptoolslogs"  # Channel for notifications
 
 # User sessions tracking
 user_sessions = {}
